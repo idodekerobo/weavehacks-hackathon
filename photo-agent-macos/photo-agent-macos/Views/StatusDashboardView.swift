@@ -66,6 +66,9 @@ struct StatusDashboardView: View {
                     }
                 )
                 
+                // Photo Scanning Card
+                PhotoScanCard()
+                
                 // QR Code for iOS Pairing
                 if let url = appState.tunnelURL, appState.tunnelStatus == .running {
                     VStack(spacing: 12) {
@@ -259,6 +262,94 @@ struct QRCodeView: View {
         }
         
         return NSImage(cgImage: cgImage, size: NSSize(width: scaledImage.extent.width, height: scaledImage.extent.height))
+    }
+}
+
+struct PhotoScanCard: View {
+    @EnvironmentObject var appState: AppState
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "photo.stack")
+                    .font(.title2)
+                    .foregroundStyle(.blue)
+                
+                Text("Photo Library")
+                    .font(.headline)
+                
+                Spacer()
+                
+                StatusBadge(status: appState.photosScanStatus)
+            }
+            
+            // Progress info
+            if appState.photosTotalCount > 0 {
+                HStack {
+                    ProgressView(
+                        value: Double(appState.photosScannedCount),
+                        total: Double(appState.photosTotalCount)
+                    )
+                    
+                    Text("\(appState.photosScannedCount) / \(appState.photosTotalCount)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Scan your photo library to analyze photos locally")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            
+            if let error = appState.photosError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.vertical, 4)
+            }
+            
+            HStack(spacing: 12) {
+                if appState.photosScanStatus == .stopped || appState.photosScanStatus == .error {
+                    Button(action: {
+                        Task {
+                            await appState.photosManager.startScanning()
+                        }
+                    }) {
+                        Label("Start Scan", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(
+                        appState.photosScanStatus == .starting ||
+                        appState.serverStatus != .running ||
+                        !appState.photosAuthStatus.isAuthorized
+                    )
+                }
+                
+                if appState.photosScanStatus == .running || appState.photosScanStatus == .starting {
+                    Button(action: {
+                        appState.photosManager.stopScanning()
+                    }) {
+                        Label("Stop Scan", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                }
+                
+                // Info text
+                if appState.serverStatus != .running {
+                    Text("Start server first")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .padding()
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(appState.photosScanStatus.color.opacity(0.3), lineWidth: 2)
+        )
     }
 }
 

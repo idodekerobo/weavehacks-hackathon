@@ -23,9 +23,29 @@ class AppState: ObservableObject {
     @Published var queueRunning: Int = 0
     @Published var queueWaitingApproval: Int = 0
     
+    // Photo scanning state
+    @Published var photosAuthStatus: PhotoAuthStatus = .notDetermined
+    @Published var photosScanStatus: ServiceStatus = .stopped
+    @Published var photosScannedCount: Int = 0
+    @Published var photosTotalCount: Int = 0
+    @Published var photosError: String?
+    
     lazy var serverManager = ServerManager(appState: self)
     lazy var tunnelManager = TunnelManager(appState: self)
+    lazy var photosManager = PhotosManager(appState: self)
     
+}
+
+enum PhotoAuthStatus: String {
+    case notDetermined = "Not Determined"
+    case restricted = "Restricted"
+    case denied = "Denied"
+    case authorized = "Authorized"
+    case limited = "Limited"
+    
+    var isAuthorized: Bool {
+        return self == .authorized || self == .limited
+    }
 }
 
 enum ServiceStatus: String {
