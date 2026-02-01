@@ -115,7 +115,7 @@ class PhotosManager: ObservableObject {
             appState.photosScanStatus = .running
             
             // Process photos concurrently using TaskGroup
-            await withThrowingTaskGroup(of: Void.self) { group in
+            try await withThrowingTaskGroup(of: Void.self) { group in
                 var processedCount = 0
                 var activeUploads = 0
                 
@@ -130,7 +130,7 @@ class PhotosManager: ObservableObject {
                     group.addTask { [weak self] in
                         guard let self = self else { return }
                         
-                        let metadata = self.extractMetadata(from: asset)
+                        let metadata = await self.extractMetadata(from: asset)
                         
                         do {
                             try await self.sendToServer(metadata)
