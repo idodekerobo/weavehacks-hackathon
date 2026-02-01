@@ -5,6 +5,7 @@ import './image-upload';
 import './image-analysis';
 import './intent-routing';
 import './event-search';
+import './calendar-creation';
 
 // Initialize Weave for all workers
 (async () => {

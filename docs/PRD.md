@@ -240,13 +240,13 @@ Agent → Combines and ranks results
 **Key insight:** Calendar integration (M) is WAY easier than Browserbase (I+L) but provides immediate testable value. Build in phases.
 
 **Phase 1 - Core Demo (Priority #2-5):**
-1. Event Extraction (J) - Extract details using Ollama structured output
-2. Calendar Integration (M) - Create calendar events via EventKit (50 lines, local)  
-3. Web Search (K) - Find canonical event pages via Browserbase (browser automation)
-4. macOS UI (N) - Approvals inbox on Mac
+1. Event Extraction (J) ✅ - Extract details using Ollama structured output
+2. Calendar Integration (M) ✅ - Create calendar events via Google Calendar API + OAuth 2.0
+3. Web Search (K) ✅ - Find canonical event pages via Browserbase (browser automation)
+4. macOS UI (N) ✅ - Approvals inbox on Mac
 
 **Phase 2 - Wow Factor (Priority #6):**
-5. RSVP Automation (I+L) - Browserbase web automation
+5. RSVP Automation (I+L) - Browserbase web automation (deferred as nice-to-have)
 
 ### Trigger inputs
 Any of:

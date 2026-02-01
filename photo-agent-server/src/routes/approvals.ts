@@ -1,5 +1,6 @@
 import express from 'express';
 import { db } from '../db/sqlite';
+import { calendarQueue } from '../services/queue';
 
 const router = express.Router();
 
@@ -103,6 +104,28 @@ router.patch('/:id', async (req, res) => {
       updateData.updatedAt,
       id
     );
+
+    // If approved, enqueue calendar creation
+    if (status === 'approved') {
+      console.log(`📅 Enqueueing calendar creation for approval: ${id}`);
+      
+      try {
+        await calendarQueue.add({
+          approvalId: id
+        }, {
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000
+          }
+        });
+        
+        console.log('✅ Calendar creation job enqueued');
+      } catch (queueError: any) {
+        console.error('⚠️  Failed to enqueue calendar creation:', queueError.message);
+        // Don't fail the approval if calendar enqueueing fails
+      }
+    }
 
     res.json({ success: true, message: 'Approval updated' });
   } catch (error) {

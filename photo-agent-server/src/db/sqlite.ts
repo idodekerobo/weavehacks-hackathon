@@ -74,6 +74,9 @@ db.exec(`
     editedData TEXT,
     approvedAt TEXT,
     rejectedAt TEXT,
+    googleCalendarEventId TEXT,
+    calendarCreatedAt TEXT,
+    calendarError TEXT,
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (assetId) REFERENCES assets(id)
@@ -83,6 +86,20 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_approval_device ON approvals(deviceId);
   CREATE INDEX IF NOT EXISTS idx_approval_asset ON approvals(assetId);
   CREATE INDEX IF NOT EXISTS idx_approval_created ON approvals(createdAt DESC);
+
+  CREATE TABLE IF NOT EXISTS oauth_tokens (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    provider TEXT NOT NULL,
+    accessToken TEXT NOT NULL,
+    refreshToken TEXT NOT NULL,
+    tokenType TEXT DEFAULT 'Bearer',
+    expiresAt TEXT,
+    scope TEXT,
+    connectedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_oauth_provider ON oauth_tokens(provider);
 `);
 
 console.log('✅ SQLite database initialized');

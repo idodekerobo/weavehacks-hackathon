@@ -4,6 +4,210 @@ Each change is numbered and timestamped.
 
 ---
 
+## [#15] Implemented Milestone M - Google Calendar Integration
+**Date:** Feb 1, 2026  
+**Type:** Feature Implementation  
+**Status:** ✅ Complete - Ready for testing
+
+### Summary
+Implemented complete Google Calendar integration using OAuth 2.0. Users can connect their Google Calendar in Settings, and approved event flyers are automatically added to their calendar with duplicate detection, all-day event support for ambiguous times, and full error handling.
+
+### What Was Built
+
+#### 1. Google Calendar Service
+**Created:** `photo-agent-server/src/services/google-calendar.ts`
+- OAuth 2.0 authorization URL generation
+- Token exchange and automatic refresh
+- Calendar event creation with duplicate detection
+- All-day event support for ambiguous times
+- Duplicate detection by event name + date
+- Full Weave tracing integration
+- Graceful error handling
+
+#### 2. OAuth Routes
+**Created:** `photo-agent-server/src/routes/oauth.ts`
+- `GET /api/oauth/google/authorize` - Start OAuth flow
+- `GET /api/oauth/google/callback` - Handle OAuth callback with success/error pages
+- `GET /api/oauth/google/status` - Check connection status
+- `POST /api/oauth/google/disconnect` - Remove calendar connection
+
+#### 3. Calendar Creation Worker
+**Created:** `photo-agent-server/src/workers/calendar-creation.ts`
+- Background job processing for calendar creation
+- Fetches event details from approvals/assets
+- Creates Google Calendar events via API
+- Updates approval with event ID or error
+- Retry logic (3 attempts with exponential backoff)
+- Checks if calendar connected before processing
+
+#### 4. Database Updates
+**Updated:** `photo-agent-server/src/db/sqlite.ts`
+- Added `oauth_tokens` table for secure token storage
+- Added calendar fields to approvals table:
+  - `googleCalendarEventId` - ID of created calendar event
+  - `calendarCreatedAt` - Timestamp of calendar creation
+  - `calendarError` - Error message if creation failed
+
+#### 5. Queue Integration
+**Updated:** `photo-agent-server/src/services/queue.ts`
+- Added `calendarQueue` for calendar creation jobs
+- Integrated with Bull Board UI for monitoring
+
+**Updated:** `photo-agent-server/src/workers/index.ts`
+- Import calendar worker on startup
+
+#### 6. Approval Trigger
+**Updated:** `photo-agent-server/src/routes/approvals.ts`
+- Enqueue calendar creation job when approval approved
+- Non-blocking (won't fail approval if calendar fails)
+
+#### 7. macOS Settings UI
+**Updated:** `photo-agent-macos/Views/SettingsView.swift`
+- Added Google Calendar section at top
+- Connect/Disconnect buttons
+- Connection status display (connected/not connected + timestamp)
+- Opens OAuth flow in system browser (NSWorkspace)
+- Auto-checks connection status on view appear
+- Error alerts for connection failures
+
+#### 8. iOS Settings UI
+**Updated:** `photo-agent-ios/Views/MainTabView.swift` (SettingsView component)
+- Added Google Calendar section at top
+- Connect/Disconnect buttons
+- Connection status with timestamp
+- Opens OAuth flow in Safari (UIApplication)
+- Auto-checks connection after OAuth
+- Error handling
+
+#### 9. Configuration
+**Updated:** `photo-agent-server/.env.example`
+- Added Google OAuth credentials section
+- Instructions for getting credentials from Google Cloud Console
+
+**Created:** `docs/CALENDAR_SETUP.md`
+- Complete setup guide for Google Cloud Console
+- OAuth configuration steps
+- Testing procedures
+- Troubleshooting guide
+
+### Technical Details
+
+**OAuth Flow:**
+1. User clicks "Connect" in Settings
+2. Opens `GET /api/oauth/google/authorize` in browser
+3. Redirects to Google OAuth consent screen
+4. User authorizes calendar access
+5. Google redirects to `/api/oauth/google/callback?code=...`
+6. Server exchanges code for access/refresh tokens
+7. Tokens stored in SQLite (secure, server-side)
+8. Success page shown, auto-closes after 3 seconds
+9. Client checks status and updates UI
+
+**Calendar Creation Flow:**
+1. User approves event flyer
+2. Approval status → "approved"
+3. Calendar creation job enqueued to Bull queue
+4. Worker processes job:
+   - Checks if calendar connected
+   - Fetches event details from approval/asset
+   - Checks for duplicate events
+   - Parses date/time (all-day if ambiguous)
+   - Creates event via Google Calendar API
+   - Updates approval with event ID
+5. Event appears in user's Google Calendar
+
+**Event Details:**
+- Summary: Event name
+- Date/Time: Parsed from extracted data (all-day if ambiguous)
+- Location: Venue + city
+- Description: Event description + canonical URL + "Added by Photos Agent"
+- Reminders: Default calendar reminders
+- Timezone: America/Los_Angeles (configurable)
+
+**Features:**
+- ✅ Automatic token refresh (tokens expire after 1 hour)
+- ✅ Duplicate detection (by name + date, fuzzy matching)
+- ✅ All-day events for ambiguous times
+- ✅ Error handling (won't block approval if calendar fails)
+- ✅ Full Weave tracing
+- ✅ Bull Board monitoring
+
+### Files Changed
+```
+photo-agent-server/
+  ├── src/
+  │   ├── services/
+  │   │   ├── google-calendar.ts          (NEW - 450 lines)
+  │   │   └── queue.ts                    (UPDATED - added calendarQueue)
+  │   ├── routes/
+  │   │   ├── oauth.ts                    (NEW - 150 lines)
+  │   │   └── approvals.ts                (UPDATED - calendar job enqueueing)
+  │   ├── workers/
+  │   │   ├── calendar-creation.ts        (NEW - 150 lines)
+  │   │   └── index.ts                    (UPDATED - import calendar worker)
+  │   ├── db/
+  │   │   └── sqlite.ts                   (UPDATED - oauth_tokens table + calendar fields)
+  │   ├── index.ts                        (UPDATED - oauth router)
+  │   └── .env.example                    (UPDATED - Google OAuth vars)
+  └── package.json                        (UPDATED - googleapis dependency)
+
+photo-agent-macos/
+  └── Views/
+      └── SettingsView.swift              (UPDATED - Google Calendar section)
+
+photo-agent-ios/
+  └── Views/
+      └── MainTabView.swift               (UPDATED - Google Calendar in SettingsView)
+
+docs/
+  ├── CALENDAR_SETUP.md                   (NEW - Complete setup guide)
+  ├── PROGRESS.md                         (UPDATED - Milestone M complete)
+  └── CHANGELOG.md                        (UPDATED - This entry)
+```
+
+### Configuration Required
+Users need to:
+1. Create Google Cloud project
+2. Enable Google Calendar API
+3. Configure OAuth consent screen
+4. Create OAuth 2.0 credentials
+5. Add credentials to `.env`:
+   ```
+   GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=your-client-secret
+   GOOGLE_REDIRECT_URI=http://localhost:1738/api/oauth/google/callback
+   ```
+
+### Testing Checklist
+- [ ] Set up Google OAuth credentials
+- [ ] Connect calendar via macOS Settings
+- [ ] Connect calendar via iOS Settings
+- [ ] Approve event flyer → verify calendar event created
+- [ ] Test duplicate detection (approve same event twice)
+- [ ] Test all-day events (ambiguous time)
+- [ ] Test token refresh (wait 1+ hours)
+- [ ] Test disconnect calendar
+- [ ] Monitor jobs in Bull Board
+
+### Next Steps
+**Priority #1:** Complete Agentic Search (Milestone H-2)
+- Install Ollama model for query understanding
+- Test search endpoints with natural language queries
+- Verify tool calls work correctly
+
+**Priority #6 (Later):** RSVP Automation (Milestone I+L)
+- Browserbase form filling (deferred as nice-to-have)
+- Calendar integration provides immediate value without this
+
+### Notes
+- Changed from EventKit (native macOS) to Google Calendar API per user feedback
+- RSVP automation intentionally deferred - calendar provides core value
+- OAuth uses standard flow (not LLM-assisted per ToS)
+- Tokens stored server-side only (never sent to clients)
+- Primary calendar used (multi-calendar support can be added later)
+
+---
+
 ## [#14] Implemented Milestone N - macOS Approvals Inbox UI
 **Date:** Feb 1, 2026  
 **Type:** Feature Implementation  

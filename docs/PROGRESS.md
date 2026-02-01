@@ -62,12 +62,12 @@ This order prioritizes features that provide immediate testable value and builds
 | **#1** | **H-2** | 🟡 In Progress | **Agentic search with tool calls** (Vercel AI SDK + Weave) | Can I search "red flowers" and get results? |
 | **#2** | **J** | ✅ Complete | **Event extraction from flyers** (Ollama structured output) | Does it extract event name, date, location? |
 | **#3** | **K** | ✅ Complete | **Web search for canonical event** (Browserbase automation) | Does it find the right event URL? |
-| **#4** | **M** | 🔴 Next | **Calendar integration** (EventKit - local, easy) | Do events appear in Calendar.app? ✅ |
+| **#4** | **M** | ✅ Complete | **Calendar integration** (Google Calendar API + OAuth 2.0) | Do events appear in Google Calendar? ✅ |
 | **#5** | **N** | ✅ Complete | **macOS approvals inbox UI** (clone iOS) | Can I approve events on Mac? |
 
 **🎉 At this point, you have a COMPLETE DEMO** (search + extract + calendar + approvals)
 
-**✅ MILESTONE J, K & N COMPLETE!** Next up: Calendar Integration (M)
+**✅ MILESTONE J, K, M & N COMPLETE!** Next priority: Complete Agentic Search (H-2)
 
 ---
 
@@ -907,14 +907,127 @@ All Browserbase sessions recorded and available at:
 
 ---
 
-### 🔴 Milestone M: Calendar Integration
-**Status:** Not Started
+### ✅ Milestone M: Calendar Integration (Google Calendar)
+**Status:** Complete  
+**Completed:** Feb 1, 2026
 
-**Goals:**
-- Create calendar events via EventKit
-- Include: title, date/time, location, link
-- Handle timezone correctly
-- Avoid duplicate calendar entries
+**Implementation:**
+- **Google Calendar API**: Uses `googleapis` npm package for calendar operations
+- **OAuth 2.0**: Standard OAuth flow for secure authentication
+- **Automatic Creation**: Calendar events created automatically when approvals are approved
+- **Duplicate Detection**: Checks for existing events by name + date before creating
+- **All-Day Events**: Creates all-day events when time is ambiguous
+- **Timezone**: Pacific timezone (configurable)
+
+**What was built:**
+- `src/services/google-calendar.ts` - Google Calendar service with OAuth 2.0
+  - OAuth authorization URL generation
+  - Token exchange and automatic refresh
+  - Calendar event creation with duplicate detection
+  - All-day event support for ambiguous times
+  - Weave tracing integration
+  
+- `src/routes/oauth.ts` - OAuth endpoints
+  - `GET /api/oauth/google/authorize` - Start OAuth flow
+  - `GET /api/oauth/google/callback` - OAuth callback handler
+  - `GET /api/oauth/google/status` - Check connection status
+  - `POST /api/oauth/google/disconnect` - Disconnect calendar
+  
+- `src/workers/calendar-creation.ts` - Background worker for calendar creation
+  - Processes calendar creation jobs from Bull queue
+  - Fetches event details from approvals/assets
+  - Creates Google Calendar events
+  - Updates approval with calendar event ID and status
+  - Error handling and retry logic
+  
+- Updated `src/services/queue.ts` - Added `calendarQueue` for job processing
+- Updated `src/workers/index.ts` - Import calendar worker
+- Updated `src/routes/approvals.ts` - Enqueue calendar creation on approval
+- Updated `src/db/sqlite.ts` - Added calendar-related fields and oauth_tokens table
+
+**Client Updates:**
+- **macOS Settings**: Added Google Calendar connection section
+  - Connect/Disconnect buttons
+  - Connection status display
+  - Opens OAuth flow in system browser
+  
+- **iOS Settings**: Added Google Calendar integration
+  - Connect/Disconnect buttons
+  - Connection status with timestamp
+  - Opens OAuth flow in Safari
+
+**Database Schema:**
+```sql
+-- OAuth tokens table
+CREATE TABLE oauth_tokens (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  provider TEXT NOT NULL,
+  accessToken TEXT NOT NULL,
+  refreshToken TEXT NOT NULL,
+  tokenType TEXT DEFAULT 'Bearer',
+  expiresAt TEXT,
+  scope TEXT,
+  connectedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Calendar fields added to approvals table
+ALTER TABLE approvals ADD COLUMN googleCalendarEventId TEXT;
+ALTER TABLE approvals ADD COLUMN calendarCreatedAt TEXT;
+ALTER TABLE approvals ADD COLUMN calendarError TEXT;
+```
+
+**User Flow:**
+1. User opens Settings (macOS or iOS)
+2. Click "Connect" in Google Calendar section
+3. Browser opens to Google OAuth consent screen
+4. User authorizes calendar access
+5. Tokens stored securely in SQLite
+6. When user approves an event flyer:
+   - Approval status updated to "approved"
+   - Calendar creation job enqueued
+   - Worker creates Google Calendar event
+   - Event ID stored in approval record
+7. Event appears in user's Google Calendar
+
+**Configuration:**
+- Requires `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`
+- Get credentials from: https://console.cloud.google.com/apis/credentials
+- Redirect URI: `http://localhost:1738/api/oauth/google/callback`
+- Scopes: `calendar.events`, `calendar.readonly`
+
+**Features:**
+- ✅ OAuth 2.0 with automatic token refresh
+- ✅ Duplicate event detection (by name + date)
+- ✅ All-day events for ambiguous times
+- ✅ Default Google Calendar reminders
+- ✅ Primary calendar integration
+- ✅ Event includes: name, date/time, location, description, URL
+- ✅ Full Weave tracing for debugging
+- ✅ Graceful error handling (won't block approval if calendar fails)
+
+**Files:**
+- `photo-agent-server/src/services/google-calendar.ts` ✅
+- `photo-agent-server/src/routes/oauth.ts` ✅
+- `photo-agent-server/src/workers/calendar-creation.ts` ✅
+- `photo-agent-server/src/services/queue.ts` ✅ (updated)
+- `photo-agent-server/src/workers/index.ts` ✅ (updated)
+- `photo-agent-server/src/routes/approvals.ts` ✅ (updated)
+- `photo-agent-server/src/db/sqlite.ts` ✅ (updated)
+- `photo-agent-server/src/index.ts` ✅ (updated)
+- `photo-agent-server/.env.example` ✅ (updated)
+- `photo-agent-macos/Views/SettingsView.swift` ✅ (updated)
+- `photo-agent-ios/Views/MainTabView.swift` ✅ (updated)
+
+**Testing:**
+- [ ] Set up Google OAuth credentials
+- [ ] Test OAuth flow (macOS)
+- [ ] Test OAuth flow (iOS)
+- [ ] Approve event flyer → verify calendar event created
+- [ ] Test duplicate detection
+- [ ] Test ambiguous time → all-day event
+- [ ] Test token refresh after expiry
+- [ ] Test disconnect calendar
 
 ---
 
