@@ -8,6 +8,8 @@
 import Foundation
 import Photos
 import CoreLocation
+import CryptoKit
+import AppKit
 
 @MainActor
 class PhotosManager: ObservableObject {
@@ -148,6 +150,18 @@ class PhotosManager: ObservableObject {
         isScanningInProgress = false
     }
     
+    /// Get all scanned assets for analysis
+    func getAllScannedAssets() async -> [PHAsset] {
+        do {
+            let assets = try await fetchRecentPhotos(limit: scanLimit)
+            print("📸 Retrieved \(assets.count) assets for analysis")
+            return assets
+        } catch {
+            print("❌ Failed to fetch assets for analysis: \(error.localizedDescription)")
+            return []
+        }
+    }
+    
     // MARK: - Private Helpers
     
     /// Fetch recent photos from the library
@@ -217,27 +231,96 @@ class PhotosManager: ObservableObject {
         )
     }
     
-    /// Send metadata to the Node server
+    /// Get image data from PHAsset
+    private func getImageData(from asset: PHAsset) async -> Data? {
+        return await withCheckedContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.isNetworkAccessAllowed = true
+            
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
+                continuation.resume(returning: data)
+            }
+        }
+    }
+    
+    /// Compress image to 70% JPEG quality
+    private func compressImage(_ data: Data) -> Data? {
+        guard let nsImage = NSImage(data: data),
+              let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
+        return bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.7])
+    }
+    
+    /// Compute SHA-256 hash of data
+    private func computeSHA256(_ data: Data) -> String {
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+    
+    /// Send image data to the Node server via multipart upload
     private func sendToServer(_ asset: UserAsset) async throws {
-        let url = URL(string: "\(serverURL)/api/assets")!
+        // This is the new upload endpoint that accepts image data
+        let url = URL(string: "\(serverURL)/api/assets/upload")!
         
+        // We need to fetch the image data for this asset
+        // Get the PHAsset from the photo library
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [asset.photoLibraryId], options: nil)
+        guard let phAsset = fetchResult.firstObject else {
+            throw PhotosManagerError.invalidResponse
+        }
+        
+        // Get image data
+        guard let imageData = await getImageData(from: phAsset) else {
+            throw PhotosManagerError.invalidResponse
+        }
+        
+        // Compress image
+        guard let compressedData = compressImage(imageData) else {
+            throw PhotosManagerError.invalidResponse
+        }
+        
+        // Compute content hash
+        let contentHash = computeSHA256(compressedData)
+        
+        // Create multipart form data
+        let boundary = UUID().uuidString
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         
-        // Create request payload
-        let payload = CreateAssetRequest(
-            photoLibraryId: asset.photoLibraryId,
-            creationDate: asset.creationDate?.ISO8601Format(),
-            latitude: asset.latitude,
-            longitude: asset.longitude,
-            altitude: asset.altitude,
-            filename: asset.filename,
-            mediaType: asset.mediaType,
-            isFavorite: asset.isFavorite
-        )
+        var body = Data()
         
-        request.httpBody = try JSONEncoder().encode(payload)
+        // Add metadata fields
+        let fields: [String: String] = [
+            "photoLibraryId": asset.photoLibraryId,
+            "deviceId": "macos-\(ProcessInfo.processInfo.hostName)",
+            "creationDate": asset.creationDate?.ISO8601Format() ?? "",
+            "latitude": asset.latitude.map { String($0) } ?? "",
+            "longitude": asset.longitude.map { String($0) } ?? "",
+            "altitude": asset.altitude.map { String($0) } ?? "",
+            "filename": asset.filename ?? "",
+            "mediaType": asset.mediaType,
+            "isFavorite": asset.isFavorite ? "true" : "false"
+        ]
+        
+        for (key, value) in fields where !value.isEmpty {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(value)\r\n".data(using: .utf8)!)
+        }
+        
+        // Add image data
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"image\"; filename=\"\(asset.filename ?? "image.jpg")\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(compressedData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        request.httpBody = body
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
@@ -249,8 +332,21 @@ class PhotosManager: ObservableObject {
             throw PhotosManagerError.serverError(statusCode: httpResponse.statusCode)
         }
         
-        // Optional: Parse response to verify success
-        let _ = try JSONDecoder().decode(AssetResponse.self, from: data)
+        // Parse response
+        struct UploadResponse: Codable {
+            let success: Bool
+            let assetId: String?
+            let jobId: Int?
+            let deduplicated: Bool?
+        }
+        
+        let uploadResponse = try JSONDecoder().decode(UploadResponse.self, from: data)
+        
+        if uploadResponse.deduplicated == true {
+            print("ℹ️ Asset deduplicated (already exists): \(asset.photoLibraryId)")
+        } else {
+            print("✅ Asset uploaded successfully: \(asset.photoLibraryId)")
+        }
     }
 }
 

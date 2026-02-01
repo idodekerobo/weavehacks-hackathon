@@ -30,9 +30,16 @@ class AppState: ObservableObject {
     @Published var photosTotalCount: Int = 0
     @Published var photosError: String?
     
+    // Model analysis state
+    @Published var ollamaStatus: ServiceStatus = .stopped
+    @Published var loadedModels: [String] = []
+    @Published var analysisProgress: (current: Int, total: Int) = (0, 0)
+    @Published var analysisError: String?
+    
     lazy var serverManager = ServerManager(appState: self)
     lazy var tunnelManager = TunnelManager(appState: self)
     lazy var photosManager = PhotosManager(appState: self)
+    lazy var modelManager = ModelManager(appState: self)
     
 }
 

@@ -12,6 +12,7 @@ import CoreLocation
 struct UserAsset: Codable, Identifiable {
     let id: String
     let photoLibraryId: String
+    let contentHash: String?  // NEW: SHA-256 hash for deduplication
     let creationDate: Date?
     let latitude: Double?
     let longitude: Double?
@@ -30,6 +31,7 @@ struct UserAsset: Codable, Identifiable {
     init(
         id: String = UUID().uuidString,
         photoLibraryId: String,
+        contentHash: String? = nil,
         creationDate: Date?,
         latitude: Double?,
         longitude: Double?,
@@ -40,6 +42,7 @@ struct UserAsset: Codable, Identifiable {
     ) {
         self.id = id
         self.photoLibraryId = photoLibraryId
+        self.contentHash = contentHash
         self.creationDate = creationDate
         self.latitude = latitude
         self.longitude = longitude
