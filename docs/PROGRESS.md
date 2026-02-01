@@ -1,6 +1,6 @@
 # Photos-as-Intent Agent — Progress Tracker
 
-**Last Updated:** Feb 1, 2026
+**Last Updated:** Feb 1, 2026 (Updated Milestone J & K for Browserbase-only implementation)
 
 ---
 
@@ -9,15 +9,30 @@
 | Component | Status | Notes |
 |-----------|--------|-------|
 | macOS App | ✅ Refactor Complete | Server + Tunnel + Photos + Image Upload (70% JPEG) + Models status check |
-| iOS App | ✅ Phase 4 Complete | Pairing + Photo Upload + Approvals + Search (Milestones O+P+Q) |
+| iOS App | ✅ Phase 4 Complete | Pairing + Photo Upload + Approvals + Search UI (backend pending) |
 | Node Server | ✅ Phase 2 Complete | SQLite + Bull queues + Ollama analysis + Weave + Approvals API |
+| Agentic Search | ✅ Milestone H-2 | Vercel AI SDK + tool calls + Weave tracing |
+| Event Extraction | 🔴 Ready to Build | Milestone J - Ollama structured output (see `MILESTONE_JK_PLAN.md`) |
+| Web Search | 🔴 Ready to Build | Milestone K - Browserbase Stagehand (see `MILESTONE_JK_PLAN.md`) |
 | Admin Dashboard | 🟡 Partial | Bull Board provides queue monitoring |
+
+---
+
+## 🎯 Implementation Priority: Shortest Path to Testable Demo
+
+**Recommended Order:** H-2 → J → M → K → N → I+L → S+T
+
+This order prioritizes features that provide immediate testable value and builds complexity incrementally.
 
 ---
 
 ## Milestone Overview
 
-### Phase 1: Foundation (macOS App Core)
+> **📌 Note on Implementation Order:**  
+> Milestones are organized by **priority for implementation**, not by phase number.  
+> Follow the "Next Priority" milestones to build the fastest path to a working demo.
+
+### ✅ Phase 1: Foundation (COMPLETE)
 | Milestone | Status | Description |
 |-----------|--------|-------------|
 | A | ✅ Complete | Server lifecycle management |
@@ -26,44 +41,95 @@
 | D | ✅ Complete | Centralized model integration (Ollama) - refactored to server |
 | E | ✅ Complete | SQLite + Bull Queue + Image Upload (merged with D refactor) |
 
-### Phase 2: Intent Pipeline (Server + Processing)
+### ✅ Phase 2: Intent Pipeline (COMPLETE)
 | Milestone | Status | Description |
 |-----------|--------|-------------|
 | E | ✅ Complete | SQLite + Bull Queue Setup (completed with D refactor) |
 | F | ✅ Complete | Redis queue integration (merged with E - using ioredis + Bull) |
 | G | ✅ Complete | Weave observability |
 | H | ✅ Complete | Photo → Intent processing pipeline |
-
-### Phase 3: Skills & Actions (Web Automation)
-| Milestone | Status | Description |
-|-----------|--------|-------------|
-| I | 🔴 Not Started | Browserbase integration |
-| J | 🔴 Not Started | Flyer detection + event extraction |
-| K | 🔴 Not Started | Web search for canonical event |
-| L | 🔴 Not Started | RSVP form completion |
-| M | 🔴 Not Started | Calendar integration |
-
-### Phase 4: Consumer Experience (iOS + macOS)
-| Milestone | Status | Description |
-|-----------|--------|-------------|
-| N | 🔴 Not Started | macOS approvals inbox UI |
 | O | ✅ Complete | iOS app foundation + pairing |
 | P | ✅ Complete | iOS photo upload + monitoring |
 | Q | ✅ Complete | iOS approvals + search UI |
-| R | 🔴 Not Started | WebSocket/SSE real-time updates |
 
-### Phase 5: Demo Polish
-| Milestone | Status | Description |
-|-----------|--------|-------------|
-| S | 🔴 Not Started | Admin dashboard live runs |
-| T | 🔴 Not Started | Admin Browserbase Live View |
-| U | 🔴 Not Started | End-to-end demo flow |
+---
 
-### Nice-to-Have
-| Milestone | Status | Description |
-|-----------|--------|-------------|
-| V1 | 🔴 Not Started | Voice approvals (Daily/Pipecat) |
-| V2 | 🔴 Not Started | Marimo mission control |
+### 🎯 NEXT PRIORITY: Phase 3 - Core Demo Features
+**Goal:** Build testable features that demonstrate value end-to-end
+
+| Priority | Milestone | Status | Description | Test After |
+|----------|-----------|--------|-------------|------------|
+| **#1** | **H-2** | 🟡 In Progress | **Agentic search with tool calls** (Vercel AI SDK + Weave) | Can I search "red flowers" and get results? |
+| **#2** | **J** | 🔴 Next | **Event extraction from flyers** (Ollama structured output) | Does it extract event name, date, location? |
+| **#3** | **K** | 🔴 After | **Web search for canonical event** (Browserbase automation) | Does it find the right event URL? |
+| **#4** | **M** | 🔴 Then | **Calendar integration** (EventKit - local, easy) | Do events appear in Calendar.app? ✅ |
+| **#5** | **N** | 🔴 Follow | **macOS approvals inbox UI** (clone iOS) | Can I approve events on Mac? |
+
+**🎉 At this point, you have a COMPLETE DEMO** (search + extract + calendar + approvals)
+
+---
+
+### 🚀 Phase 4 - Advanced Automation (The "Wow" Factor)
+**Goal:** Add web automation for RSVP completion
+
+| Priority | Milestone | Status | Description | Test After |
+|----------|-----------|--------|-------------|------------|
+| **#6** | **I + L** | 🔴 Later | **Browserbase integration + RSVP automation** | Does it complete RSVPs automatically? |
+
+---
+
+### ✨ Phase 5 - Demo Polish (Final Touches)
+**Goal:** Make it judge-ready with beautiful dashboards
+
+| Priority | Milestone | Status | Description | Test After |
+|----------|-----------|--------|-------------|------------|
+| **#7** | **S** | 🔴 Polish | **Admin dashboard live runs** | Can judges see traces? |
+| **#8** | **T** | 🔴 Polish | **Browserbase Live View integration** | Can judges watch automation? |
+| **#9** | **U** | 🔴 Polish | **End-to-end demo flow rehearsal** | Is the demo narrative tight? |
+
+---
+
+### ⏸️ DEFERRED: Nice-to-Have Features
+**Reason:** Not core to the demo value proposition
+
+| Milestone | Status | Description | Why Deferred |
+|-----------|--------|-------------|--------------|
+| R | ⏸️ Deferred | WebSocket/SSE real-time updates | Polling works fine for hackathon |
+| V1 | ⏸️ Deferred | Voice approvals (Daily/Pipecat) | Cool but not core value |
+| V2 | ⏸️ Deferred | Marimo mission control | Bull Board already exists |
+
+---
+
+## 🔑 Key Insights: Why This Order?
+
+### Traditional Approach (Risky):
+```
+Phase 3 (I→J→K→L→M) → Phase 4 (N) → Phase 5 (S→T)
+❌ Can't test anything until ALL of Phase 3 is done
+❌ High risk of getting stuck on Browserbase complexity
+```
+
+### Optimized Approach (This Order):
+```
+H-2 → J → M → K → N → I+L → S+T
+✅ After H-2: Test semantic search immediately
+✅ After J: Test event extraction accuracy
+✅ After M: Test calendar creation (FIRST USER VALUE!)
+✅ After K: Test event page discovery
+✅ After N: COMPLETE DEMO (without RSVP automation)
+✅ I+L becomes "icing on the cake"
+```
+
+### Why Calendar Before Browserbase?
+- **Calendar (M)** = 50 lines of EventKit code, works locally, instant feedback
+- **Browserbase (I+L)** = Complex web scraping, network dependent, many edge cases
+- **Result**: Get core value working first, add automation layer later
+
+### Why Search First?
+- **Immediate value**: Users can find photos naturally
+- **Foundation for everything**: Event extraction uses same embeddings
+- **Demo-ready**: Shows agent capabilities + Weave tracing
+- **Easy to test**: Just search "red flowers" and validate results
 
 ---
 
@@ -206,9 +272,10 @@
 **Status:** ✅ Refactored Complete
 **Original Completion:** Jan 31, 2026
 **Refactor Completion:** Feb 1, 2026
+**Cleanup:** Feb 1, 2026 - Removed stale ModelManager from macOS app
 
 **Architecture Change:**
-Successfully migrated from client-side analysis to centralized server-side analysis.
+Successfully migrated from client-side analysis to centralized server-side analysis. Removed all client-side Ollama checks as they are no longer needed.
 
 **What was built (refactored):**
 - **Server Side (NEW)**:
@@ -224,8 +291,9 @@ Successfully migrated from client-side analysis to centralized server-side analy
 - **Mac App Side (UPDATED)**:
   - `UserAsset.swift` - Added `contentHash` field for SHA-256 deduplication
   - `PhotosManager.swift` - Updated to upload compressed images (70% JPEG) with multipart/form-data
-  - `ModelManager.swift` - Simplified to status checks only (removed analysis logic)
-  - `StatusDashboardView.swift` - Updated UI to show queue status instead of manual analysis button
+  - `ModelManager.swift` - **DELETED** (no longer needed - server handles all model checks)
+  - `AppState.swift` - Removed Ollama-related state (`ollamaStatus`, `loadedModels`, `ollamaError`)
+  - `StatusDashboardView.swift` - Removed Model Analysis UI card and status checks
 
 **New Architecture Benefits:**
 - ✅ Single analysis pipeline (no code duplication for iOS)
@@ -234,6 +302,7 @@ Successfully migrated from client-side analysis to centralized server-side analy
 - ✅ Automatic analysis after upload (no manual button needed)
 - ✅ Bull Board UI for monitoring queues at `/admin/queues`
 - ✅ Server as single source of truth for both macOS and iOS
+- ✅ No duplicate Ollama checks (server health check covers this)
 
 **Processing Flow:**
 ```
@@ -252,7 +321,7 @@ Node Server (Bull Queue: 'image-analysis', concurrency: 4)
   ↓ Enqueue 'intent-routing' (future)
 ```
 
-**Models used:**
+**Models used (server-side only):**
 - Vision: `qwen3-vl:8b` (OCR + image understanding)
 - Embeddings: `nomic-embed-text` (semantic search)
 
@@ -283,11 +352,12 @@ cd photo-agent-server && npm run dev
   - `photo-agent-server/src/index.ts` ✅ (updated)
   - `photo-agent-server/package.json` ✅ (updated)
 
-- **Mac App (UPDATED):**
+- **Mac App (UPDATED/DELETED):**
   - `photo-agent-macos/Models/UserAsset.swift` ✅
   - `photo-agent-macos/Managers/PhotosManager.swift` ✅
-  - `photo-agent-macos/Managers/ModelManager.swift` ✅
-  - `photo-agent-macos/Views/StatusDashboardView.swift` ✅
+  - `photo-agent-macos/Managers/ModelManager.swift` ❌ (DELETED - stale code)
+  - `photo-agent-macos/Models/AppState.swift` ✅ (removed Ollama state)
+  - `photo-agent-macos/Views/StatusDashboardView.swift` ✅ (removed Model Analysis card)
 
 ---
 
@@ -515,6 +585,213 @@ Queue: 'intent-routing' (placeholder)
 
 ---
 
+### 🟡 Milestone H-2: Agentic Search (Conversational Search with Tool Calls)
+**Status:** In Progress
+**Started:** Feb 1, 2026
+**Prerequisites:** Milestone G (Weave) ✅ + Milestone H (Intent Pipeline) ✅
+
+**Goals:**
+Build a conversational, agentic search system that uses tool calls to execute semantic search queries against the photo database. Users can ask natural language questions like "give me images that have red flowers" or "show me event flyers from this week" and the agent will intelligently break down the query, execute the appropriate tools, and return results.
+
+**Architecture:**
+- **Vercel AI SDK** - Agent orchestration and tool calling
+- **Weave** - Full tracing of agent loops, tool executions, and LLM calls
+- **Ollama** - Query understanding and result summarization
+- **SQLite** - Vector similarity search via embeddings
+
+**What to build:**
+
+**1. Server-Side Agent (`src/services/search-agent.ts`):**
+- Initialize Vercel AI SDK with Ollama provider
+- Define search tools:
+  - `search_by_embedding` - Semantic search via cosine similarity
+  - `search_by_text` - Full-text search on OCR/summary fields
+  - `filter_by_intent` - Filter by intentType (event_flyer, general_photo, other)
+  - `filter_by_date_range` - Filter by creation date
+  - `filter_by_location` - Filter by lat/lng proximity
+- Implement agent loop with max 5 iterations
+- Wrap entire agent execution with Weave tracing
+
+**2. Search Tools Implementation (`src/services/search-tools.ts`):**
+
+**Tool: `search_by_embedding`**
+- Input: `{ query: string, topK: number }`
+- Steps:
+  1. Generate query embedding via Ollama (nomic-embed-text)
+  2. Fetch all asset embeddings from SQLite
+  3. Compute cosine similarity between query and each asset
+  4. Return top K results sorted by similarity score
+- Output: Array of `{ assetId, similarity, summary, ocrText }`
+
+**Tool: `search_by_text`**
+- Input: `{ query: string }`
+- Steps:
+  1. SQL `LIKE` search on summary + ocrText fields
+  2. Return matching assets with relevance score
+- Output: Array of matching assets
+
+**Tool: `filter_by_intent`**
+- Input: `{ intentType: string, results: Asset[] }`
+- Steps:
+  1. Filter results by intentLabels field
+  2. Return filtered subset
+- Output: Filtered array
+
+**Tool: `filter_by_date_range`**
+- Input: `{ startDate: string, endDate: string, results: Asset[] }`
+- Steps:
+  1. Parse date range
+  2. Filter by creationDate
+- Output: Filtered array
+
+**Tool: `filter_by_location`**
+- Input: `{ latitude: number, longitude: number, radiusMiles: number, results: Asset[] }`
+- Steps:
+  1. Calculate haversine distance
+  2. Filter by proximity
+- Output: Filtered array
+
+**3. API Endpoint (`src/routes/search.ts`):**
+```typescript
+POST /api/search
+Body: {
+  query: string,      // "give me images that have red flowers"
+  deviceId?: string,  // Optional device filter
+  maxResults?: number // Default 10
+}
+
+Response: {
+  success: boolean,
+  results: Asset[],
+  agentSteps: {
+    toolCalls: string[],
+    reasoning: string
+  }
+}
+```
+
+**4. Agent Loop Example:**
+```
+User: "give me images that have red flowers"
+
+Agent thinks: I need to search for images with red flowers.
+Tool call 1: search_by_embedding("red flowers", topK=20)
+→ Returns 20 semantically similar images
+
+Agent thinks: Let me refine by checking if "red" and "flower" appear in text
+Tool call 2: search_by_text("red flower")
+→ Returns 8 images with those keywords
+
+Agent thinks: Combine both results and rank by relevance
+→ Returns final 10 results with explanations
+```
+
+**5. Weave Integration:**
+- Wrap agent execution: `createTracedOp('agentSearch', agentSearchImpl)`
+- Log attributes:
+  - `userQuery` - Original search query
+  - `toolCallsUsed` - Array of tool names called
+  - `iterationCount` - Number of agent iterations
+  - `resultsReturned` - Count of final results
+  - `executionTime` - Total time in ms
+- Trace each tool execution separately
+- Log LLM calls for query understanding and result summarization
+
+**6. Cosine Similarity Implementation:**
+```typescript
+function cosineSimilarity(a: number[], b: number[]): number {
+  const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0);
+  const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0));
+  const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0));
+  return dotProduct / (magnitudeA * magnitudeB);
+}
+```
+
+**7. Database Schema (no changes needed):**
+- `assets.embedding` - JSON string of float array (already exists)
+- `assets.summary` - Text summary (already exists)
+- `assets.ocrText` - Extracted text (already exists)
+- `assets.intentLabels` - JSON array (already exists)
+
+**Example Queries Supported:**
+- "give me images that have red flowers"
+- "show me event flyers from this week"
+- "find photos taken in San Francisco"
+- "screenshots with code or programming"
+- "images of people at parties"
+- "receipts from restaurants"
+
+**Files to implement:**
+- `photo-agent-server/src/services/search-agent.ts` ✅ (Vercel AI agent)
+- `photo-agent-server/src/services/search-tools.ts` ✅ (tool implementations)
+- `photo-agent-server/src/routes/search.ts` ✅ (API endpoint)
+- `photo-agent-server/src/index.ts` ✅ (added search router)
+- `photo-agent-server/package.json` ✅ (added `ai`, `ollama-ai-provider`, `zod` packages)
+
+**Implementation completed:**
+- ✅ Vercel AI SDK integration with Ollama provider (`ollama-ai-provider`)
+- ✅ Six search tools for the agent:
+  1. `searchByEmbedding` - Semantic search via cosine similarity
+  2. `searchByText` - Full-text search on OCR/summary
+  3. `filterByIntent` - Filter by event_flyer/general_photo/other
+  4. `filterByDateRange` - Natural language date filtering ("this week", "last 7 days")
+  5. `filterByLocation` - Location-based filtering
+  6. `combineResults` - Deduplicate and merge results
+- ✅ GET `/api/search?q=query` endpoint (matches iOS expectations)
+- ✅ Full Weave tracing integration
+- ✅ Returns `photoLibraryId` for iOS to fetch images from Photos library
+- ✅ Agent can call multiple tools in sequence (max 5 iterations)
+
+**Next steps:**
+- 🔴 Install dependencies: `npm install` in photo-agent-server
+- 🔴 Ensure Ollama model `llama3.2` is available: `ollama pull llama3.2`
+- 🔴 Test search endpoint with sample queries
+- 🔴 Verify iOS SearchView integration works
+
+**Dependencies to add:**
+```bash
+npm install ai @ai-sdk/openai
+```
+
+**Key Implementation Notes:**
+1. Use Vercel AI SDK's `generateText()` with tools for agent loop
+2. Keep max iterations to 5 to prevent infinite loops
+3. Cache embeddings in memory for faster similarity search (if needed)
+4. Return both results AND reasoning (show which tools were called)
+5. Handle empty results gracefully with helpful suggestions
+6. Log EVERYTHING to Weave for debugging and eval
+
+**Success Criteria:**
+- ✅ Natural language queries work without exact keyword matching
+- ✅ Agent intelligently selects appropriate tools
+- ✅ Results are semantically relevant (validated via Weave traces)
+- ✅ Full agent loop visible in Weave dashboard
+- ✅ iOS SearchView displays results correctly
+- ✅ Response time < 3 seconds for typical queries
+
+**Integration with iOS:**
+- iOS `SearchView.swift` already implemented (line 95 calls `/api/search`)
+- No client-side changes needed
+- Server returns `SearchResponse` matching existing interface
+
+**Weave Visibility:**
+For judges/demos, each search will show:
+1. User query
+2. Agent's tool selection reasoning
+3. Each tool execution with inputs/outputs
+4. LLM calls for understanding and summarization
+5. Final results with relevance scores
+6. Total execution time and iteration count
+
+**Why This Matters (Hackathon Framing):**
+- Proves agent capabilities with real tool use (not just LLM chat)
+- Demonstrates Weave value (trace every decision)
+- Shows Vercel AI SDK orchestration
+- Enables natural language search over private data
+- Directly supports PRD's "Agentic Search" skill
+
+---
+
 ### 🔴 Milestone I: Browserbase Integration
 **Status:** Not Started
 
@@ -533,22 +810,45 @@ Queue: 'intent-routing' (placeholder)
 ### 🔴 Milestone J: Flyer Detection + Event Extraction
 **Status:** Not Started
 
+**Implementation Decisions:**
+- **Structured Output**: Use Ollama's native structured output capabilities (JSON schema enforcement)
+- **Ambiguous Data**: Return ambiguous dates/times as-is for human review in approval flow
+- **Model**: Use existing `qwen3-vl:8b` vision model
+
 **Goals:**
-- Identify event flyers with high confidence
-- Extract: event name, date, time, location, URL
-- Handle ambiguous dates/times
-- QR code detection and decoding
+- Identify event flyers with high confidence (reuse existing `classifyIntent` function)
+- Extract structured event details using Ollama JSON schema:
+  - Event name (required)
+  - Date (required)
+  - Time (optional - might be TBD)
+  - Location/venue (required)
+  - URL (optional - might not be on flyer)
+  - Description (optional)
+  - Ticket price (optional)
+- Additional fields may be enriched from Browserbase web search (Milestone K)
+- Handle ambiguous dates/times by returning as-is for human review
+
+**Nice-to-Have (if time):**
+- QR code detection and decoding (add `jsqr` library for reliability)
 
 ---
 
 ### 🔴 Milestone K: Web Search for Canonical Event
 **Status:** Not Started
 
+**Implementation Decisions:**
+- **Browserbase SDK**: Use Stagehand TypeScript SDK (https://docs.stagehand.dev)
+- **Search Strategy**: Navigate to Google, search for "[event name] [location] [date]", extract results
+- **Session Management**: Create new session per search (pause/keep-alive for HITL workflows later)
+- **Verification**: Use local Ollama vision model to verify extracted details + Browserbase screenshots match original flyer
+- **Artifacts**: Store screenshots/recordings on local filesystem, reference in Weave traces
+
 **Goals:**
-- Search web for extracted event details
-- Find canonical event page (Eventbrite, Luma, Meetup, etc.)
-- Verify extracted details match
+- Use Browserbase Stagehand to search web for extracted event details
+- Navigate browser to Google, search, and find canonical event page (Eventbrite, Luma, Meetup, etc.)
+- Verify extracted details match using Ollama vision model comparison (original flyer vs browser screenshots)
 - Handle "couldn't find" case gracefully
+- Capture session recordings and screenshots for debugging (stored locally, linked in Weave)
 
 ---
 

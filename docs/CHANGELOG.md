@@ -4,6 +4,586 @@ Each change is numbered and timestamped.
 
 ---
 
+## [#12] Created Implementation Plan for Milestones J & K
+**Date:** Feb 1, 2026  
+**Type:** Planning  
+**Related:** Milestones J & K, Browserbase Integration
+
+### Summary
+Created comprehensive implementation plan for event extraction (J) and web search with Browserbase Stagehand (K). All clarifying questions answered and architecture decisions documented.
+
+### Key Decisions
+
+#### Milestone J: Event Extraction
+- **Structured Output**: Use Ollama's native JSON schema enforcement
+- **Model**: Existing `qwen3-vl:8b` vision model
+- **Ambiguous Data**: Return as-is for human review in approval flow
+- **QR Codes**: Deferred to nice-to-have (not critical for MVP)
+
+#### Milestone K: Web Search
+- **SDK**: Browserbase Stagehand TypeScript SDK for AI-native automation
+- **Search Strategy**: Google search with extracted event details
+- **Session Management**: New session per search (pause/keep-alive for HITL later)
+- **Verification**: Ollama vision model compares flyer vs browser screenshots
+- **Artifacts**: Screenshots/recordings stored locally, linked in Weave traces
+
+### Event Schema
+```typescript
+interface ExtractedEvent {
+  eventName: string;      // required
+  date: string;           // required (may be ambiguous)
+  time?: string;          // optional
+  location: string;       // required
+  venue?: string;         // optional
+  url?: string;           // optional
+  description?: string;   // optional
+  ticketPrice?: string;   // optional
+  confidence: number;     // 0.0-1.0
+}
+```
+
+### Browserbase Stagehand Integration
+- Navigate to Google for searches
+- Use `act()` for natural language actions
+- Use `extract()` for structured data extraction with Zod schemas
+- Capture screenshots for verification
+- Session recordings available via Browserbase console
+
+### Verification Strategy
+Use Ollama vision model to compare:
+1. Original flyer image
+2. Browser screenshot of found event page
+3. Extracted event details
+- Returns match confidence (0.0-1.0)
+- Ensures we found the correct event
+
+### Files to Create
+- `src/services/event-extraction.ts` - Ollama structured extraction
+- `src/services/browserbase.ts` - Stagehand integration
+- `src/workers/event-search.ts` - Search worker queue
+- `artifacts/` directory - Screenshots and recordings storage
+
+### Documentation
+Created `docs/MILESTONE_JK_PLAN.md` with:
+- Complete architecture decisions
+- Implementation steps with code examples
+- Testing strategy
+- Success criteria
+- Risk mitigations
+- Timeline estimate: 6-8 hours total
+
+### Next Steps
+1. Install Stagehand dependency
+2. Implement Milestone J (event extraction)
+3. Implement Milestone K (web search)
+4. End-to-end testing
+
+---
+
+## [#11] Updated Milestone J & K for Browserbase-only Implementation
+**Date:** Feb 1, 2026  
+**Type:** Planning Update  
+**Related:** Milestones J & K
+
+### Summary
+Updated PRD and PROGRESS documents to clarify that Browserbase will be the ONLY tool used for web search and event discovery. No API fallbacks (Google/Serper API) will be used.
+
+### Changes Made
+1. **PRD.md Updates:**
+   - Changed "Google/Serper API" to "Browserbase automation" in Milestone K description
+   - Updated "Where Browserbase is *product-critical*" section to emphasize Browserbase as the ONLY tool for web interactions
+   - Added "Searching the web to find the canonical event page (no API fallbacks)" as first bullet point
+
+2. **PROGRESS.md Updates:**
+   - Changed Milestone K description from "Google/Serper API" to "Browserbase automation"
+   - Updated Milestone K goals to specify Browserbase browser automation
+   - Added session recording and screenshot capture requirements
+
+### Rationale
+- Demonstrates Browserbase capabilities more effectively for hackathon
+- Simplifies architecture (one tool for all web interactions)
+- Provides better observability with session recordings and Live View
+- More realistic web interaction (vs API that might not return actual event pages)
+
+### Next Steps
+- Answer clarifying questions about Milestones J & K implementation details
+- Begin implementation of event extraction (Milestone J)
+
+---
+
+## [#10] Implemented Agentic Search (Milestone H-2)
+**Date:** Feb 1, 2026  
+**Type:** Feature Implementation  
+**Related:** Changes #8 & #9 (PROGRESS.md & PRD.md updates)
+
+### Summary
+Implemented the agentic search system using Vercel AI SDK with Ollama provider for local model execution. This is Priority #1 in the implementation roadmap and enables natural language search over the photo library with tool-calling capabilities.
+
+### What Was Built
+
+#### Core Files Created
+1. **`src/services/search-tools.ts`** - Six search tools for the agent:
+   - `searchByEmbedding` - Semantic search via cosine similarity (top-K results)
+   - `searchByText` - Full-text search on OCR/summary fields
+   - `filterByIntent` - Filter by event_flyer/general_photo/other
+   - `filterByDateRange` - Natural language date parsing ("this week", "last 7 days", etc.)
+   - `filterByLocation` - Location-based proximity filtering
+   - `combineResults` - Deduplicate and merge multiple result sets
+
+2. **`src/services/search-agent.ts`** - Agent orchestration:
+   - Vercel AI SDK integration with Ollama provider
+   - System prompt guiding agent strategy
+   - Max 5 tool iterations
+   - Full Weave tracing integration
+   - Returns results formatted for iOS consumption
+
+3. **`src/routes/search.ts`** - API endpoint:
+   - `GET /api/search?q=query&deviceId=xxx&maxResults=10`
+   - Matches existing iOS SearchView expectations
+   - Returns `photoLibraryId` for iOS Photos library integration
+
+#### Updated Files
+- **`package.json`** - Added dependencies:
+  - `ai` (Vercel AI SDK)
+  - `ollama-ai-provider` (Ollama integration for Vercel AI)
+  - `zod` (Schema validation)
+- **`src/index.ts`** - Registered `/api/search` route
+
+### Technical Implementation Details
+
+#### Tool Calling Strategy
+The agent can call multiple tools in sequence:
+1. Start with semantic search (`searchByEmbedding`) for most queries
+2. Add text search for keyword matching
+3. Apply filters (intent, date, location) to refine
+4. Combine and deduplicate results
+5. Return top N results with agent reasoning
+
+#### Embedding Search
+- Uses existing `nomic-embed-text` embeddings from image analysis
+- Calculates cosine similarity between query embedding and all asset embeddings
+- Returns top K most similar results with similarity scores
+
+#### Natural Language Date Parsing
+Supports expressions like:
+- "this week" / "last week"
+- "today" / "yesterday"
+- "last N days" (e.g., "last 7 days")
+
+#### iOS Integration
+Response format matches existing `SearchResult` and `SearchResponse` models:
+```typescript
+{
+  success: true,
+  results: [{
+    id: string,              // Asset ID
+    photoLibraryId: string,  // For iOS Photos library fetch
+    intentType: string,
+    summary: string,
+    ocrText: string,
+    confidence: number,
+    creationDate: string,
+    filename: string
+  }],
+  total: number,
+  agentSteps: {
+    toolCalls: string[],    // Tools used by agent
+    reasoning: string,       // Agent's explanation
+    iterations: number       // Tool roundtrips
+  }
+}
+```
+
+### Weave Observability
+All search operations are fully traced:
+- User query
+- Tool calls and parameters
+- LLM reasoning steps
+- Results returned
+- Execution time
+- Iteration count
+
+### Prerequisites for Testing
+1. Install dependencies: `cd photo-agent-server && npm install`
+2. Ensure Ollama model available: `ollama pull llama3.2`
+3. Ensure `nomic-embed-text` available: `ollama pull nomic-embed-text`
+4. Start server: `npm run dev`
+
+### Next Steps
+- Test with sample queries ("red flowers", "event flyers", "photos from this week")
+- Verify iOS SearchView integration
+- Validate Weave traces in dashboard
+- Optimize tool selection strategy based on query types
+
+### Status Update
+- Milestone H-2: 🔴 Not Started → 🟡 In Progress
+- Agentic Search component: 🔴 Not Started → 🟡 In Progress
+
+---
+
+## [#9] Updated PRD.md to Reflect Implementation Strategy
+**Date:** Feb 1, 2026  
+**Type:** Planning / Documentation Update  
+**Related:** Change #8 (PROGRESS.md restructure)
+
+### Summary
+Updated `PRD.md` to align with the optimal implementation strategy documented in PROGRESS.md. Added detailed section on Agentic Search as Priority #1, clarified phased approach (Calendar before Browserbase), and marked deferred features.
+
+### What Changed
+
+#### New Section: Core Skill - Agentic Search (Priority #1)
+Added comprehensive specification for agentic search:
+- **Technical architecture**: Vercel AI SDK + Weave + Ollama + SQLite
+- **5 search tools**: embedding, text, intent filter, date filter, location filter
+- **Agent loop example**: Shows how agent uses tools to answer queries
+- **Why priority #1**: Immediate value, demonstrates agent capabilities, foundation for everything
+
+#### Updated: Skills System
+- **Agentic Search** - Now marked as REQUIRED (Priority #1)
+- **Flyer → Calendar** - Split from RSVP, marked as CORE VALUE  
+- **Flyer → RSVP** - Separated, marked as WOW FACTOR (Phase 2)
+- **Implementation Priority section**: Clear build order (Search → Extract → Calendar → Web Search → RSVP)
+
+#### Updated: Flagship Skill Section
+- Added "Implementation strategy: Calendar BEFORE Browserbase"
+- **Phase 1** (Core Demo): J → M → K → N
+- **Phase 2** (Wow Factor): I+L
+- Explains why calendar (50 lines, local) comes before Browserbase (complex, network-dependent)
+
+#### Updated: Weave Tracing Section
+- Added **Agentic Search** tracing requirements (top priority)
+- Includes: user query, agent reasoning, tool calls, LLM calls, results, execution time
+- Maintains existing traces for extraction, routing, calendar, RSVP
+
+#### Updated: Browserbase Section
+- Changed from "required" to "Phase 2 - Wow Factor"
+- Clarified: Event discovery can use Google/Serper API (no Browserbase needed)
+- Browserbase primarily for automated RSVP completion
+- **Implementation priority**: Priority #6 (after core demo works)
+
+#### Updated: Voice & Marimo Sections
+- Marked as **⏸️ DEFERRED**
+- Added reasoning: "Cool but not core value" (Voice), "Bull Board exists" (Marimo)
+- Kept specifications for future reference
+
+#### Updated: Real-time Updates
+- Changed from "planned" to **⏸️ Deferred**
+- Reason: Polling works fine for hackathon
+
+### Key Messages Added
+
+**Calendar Before Browserbase:**
+```
+Calendar (M):
+- 50 lines of EventKit code
+- Works locally
+- Instant feedback
+- IMMEDIATE USER VALUE
+
+Browserbase (I+L):
+- Complex web scraping
+- Network dependent
+- Many edge cases
+- "Icing on the cake"
+```
+
+**Search First:**
+- Immediate testable value
+- Foundation for event extraction
+- Shows agent + Weave capabilities
+- iOS UI already built
+
+### Impact on Product Vision
+
+**OLD narrative:** "We built a system that automates RSVPs"
+- Risk: If Browserbase fails, no demo
+
+**NEW narrative:** "We built a system that makes photos searchable and actionable"  
+- Safe: Core demo (Search + Extract + Calendar) works without web automation
+- Browserbase becomes optional wow factor
+
+### Files Updated
+- `docs/PRD.md` ✅ - Added agentic search section, updated priorities, marked deferrals
+- `docs/CHANGELOG.md` ✅ - This entry
+
+### Alignment Check
+PRD now fully aligned with:
+- ✅ PROGRESS.md implementation order (H-2 → J → M → K → N → I+L)
+- ✅ Risk mitigation strategy (testable increments)
+- ✅ Weave as must-have (agentic search traces)
+- ✅ Calendar-first approach
+- ✅ Deferred features clearly marked
+
+---
+
+## [#8] Restructured PROGRESS.md for Optimal Implementation Order
+**Date:** Feb 1, 2026  
+**Type:** Planning / Documentation Restructure  
+**Priority:** High
+
+### Summary
+Completely restructured `PROGRESS.md` to reflect the **shortest path to a testable demo**, prioritizing features by value and testability rather than logical phase grouping. This reordering enables faster iteration and reduces risk.
+
+### What Changed
+
+#### New Implementation Order
+**Priority Path:** H-2 → J → M → K → N → I+L → S+T
+
+**Previous Structure:**
+- Phases organized logically (Foundation → Pipeline → Automation → UX → Polish)
+- Required completing entire Phase 3 (I→J→K→L→M) before seeing value
+- High risk: Browserbase complexity blocked everything
+
+**New Structure:**
+- Phases organized by **implementation priority**
+- Each milestone provides **immediate testable value**
+- Defers complex features (Browserbase, WebSockets) until core demo works
+
+#### Priority Breakdown
+
+**🎯 Phase 3 - Core Demo Features (NEXT PRIORITY)**
+1. **H-2** (Agentic Search) - Test: "Can I search 'red flowers'?"
+2. **J** (Event Extraction) - Test: "Does it extract event details?"
+3. **M** (Calendar Integration) - Test: "Do events appear in Calendar.app?" ✅ **FIRST USER VALUE**
+4. **K** (Web Search) - Test: "Does it find the right event URL?"
+5. **N** (macOS Approvals UI) - Test: "Can I approve events on Mac?"
+   
+**Result after Phase 3:** COMPLETE DEMO (search + extract + calendar + approvals)
+
+**🚀 Phase 4 - Advanced Automation (The "Wow" Factor)**
+6. **I+L** (Browserbase + RSVP) - Test: "Does it complete RSVPs automatically?"
+
+**✨ Phase 5 - Demo Polish (Final Touches)**
+7. **S** (Admin Dashboard) - For judge visibility
+8. **T** (Browserbase Live View) - Show automation in action
+9. **U** (End-to-end Demo) - Polish the narrative
+
+**⏸️ Deferred Features**
+- **R** (WebSocket/SSE) - Polling works fine for hackathon
+- **V1** (Voice) - Cool but not core value
+- **V2** (Marimo) - Bull Board already exists
+
+### Key Insights Added
+
+#### Why Calendar Before Browserbase?
+```
+Calendar (M):
+- 50 lines of EventKit code
+- Works locally, no network dependency
+- Instant feedback
+- IMMEDIATE USER VALUE
+
+Browserbase (I+L):
+- Complex web scraping
+- Network dependent
+- Many edge cases
+- "Nice to have" automation
+```
+
+#### Why Search First?
+- Immediate value: Users can find photos naturally
+- Foundation for everything: Event extraction uses same embeddings
+- Demo-ready: Shows agent capabilities + Weave tracing
+- Easy to test: Just search "red flowers" and validate results
+
+### Documentation Structure Changes
+
+**New Sections Added:**
+1. **🎯 Implementation Priority** - Clear recommended order
+2. **Priority Tables** - Each phase shows "Test After" criteria
+3. **🔑 Key Insights** - Explains the reasoning
+4. **Traditional vs Optimized** - Shows why this order is better
+
+**Status Indicators Updated:**
+- ✅ Complete (Phases 1 & 2 + O/P/Q)
+- 🔴 Not Started → Changed to "Start Here", "Next", "Then", etc.
+- ⏸️ Deferred → New indicator for postponed features
+
+### Testing Criteria by Milestone
+
+Each milestone now includes **testable success criteria**:
+- H-2: "Can I search 'red flowers' and get results?"
+- J: "Does it extract event name, date, location?"
+- M: "Do events appear in Calendar.app?" ← **FIRST VALUE**
+- K: "Does it find the right event URL?"
+- N: "Can I approve events on Mac?"
+- I+L: "Does it complete RSVPs automatically?"
+
+### Risk Reduction
+
+**Old Approach Risk:**
+- Must complete 5 milestones (I→J→K→L→M) before any testable value
+- If Browserbase is hard (it is), entire demo blocked
+- No incremental validation
+
+**New Approach Risk Mitigation:**
+- Test after each milestone
+- Core value (search + calendar) works without web automation
+- Browserbase becomes optional "wow factor"
+- Can demo with H-2 + J + M + K even if I+L fails
+
+### Impact on Demo Narrative
+
+**Previous:** "We built a system that automates RSVPs"
+- Problem: If automation fails, no demo
+
+**New:** "We built a system that makes photos searchable and actionable"
+- ✅ Search works (H-2)
+- ✅ Event extraction works (J)
+- ✅ Calendar integration works (M)
+- ✅ Event discovery works (K)
+- ✅ Approvals work (N)
+- 🎁 Bonus: Automated RSVP (I+L) if time permits
+
+### Files Updated
+- `docs/PROGRESS.md` ✅ - Complete restructure
+- `docs/CHANGELOG.md` ✅ - This entry
+
+### Next Actions
+Follow the priority order:
+1. Implement H-2 (Agentic Search)
+2. Implement J (Event Extraction)
+3. Implement M (Calendar Integration) ← First user value!
+4. Continue down the list
+
+---
+
+## [#7] Added Milestone H-2: Agentic Search with Tool Calls
+**Date:** Feb 1, 2026  
+**Type:** Planning / Documentation  
+**Milestone:** H-2 (new)
+
+### Summary
+Added comprehensive milestone specification for agentic search functionality using Vercel AI SDK + Weave tracing. This enables conversational, natural language search over the photo database with intelligent tool calling and full observability.
+
+### What Was Added
+
+#### New Milestone: H-2 - Agentic Search
+- **Architecture**: Vercel AI SDK for agent orchestration + Weave for tracing
+- **Goal**: Users can search with natural language queries like "give me images that have red flowers"
+- **Agent Loop**: Max 5 iterations with intelligent tool selection
+
+#### Search Tools Defined
+1. **search_by_embedding** - Semantic search via cosine similarity
+   - Generate query embedding (nomic-embed-text)
+   - Compare against stored embeddings
+   - Return top K results
+
+2. **search_by_text** - Full-text search on OCR/summary
+   - SQL LIKE queries
+   - Keyword matching
+
+3. **filter_by_intent** - Filter by intentType
+   - event_flyer, general_photo, other
+
+4. **filter_by_date_range** - Filter by creation date
+   - Parse natural language dates
+
+5. **filter_by_location** - Filter by proximity
+   - Haversine distance calculation
+
+#### API Endpoint Specification
+```
+POST /api/search
+Body: { query: string, deviceId?: string, maxResults?: number }
+Response: { success: boolean, results: Asset[], agentSteps: {...} }
+```
+
+#### Weave Integration Plan
+- Trace entire agent execution loop
+- Log tool calls, iterations, LLM decisions
+- Track user queries and result relevance
+- Enable eval-driven iteration
+
+#### Files Planned
+- `src/services/search-agent.ts` - Agent implementation
+- `src/services/search-tools.ts` - Tool implementations
+- `src/routes/search.ts` - API endpoint
+- Package updates for `ai` and `@ai-sdk/openai`
+
+### Why This Matters
+1. **Proves agent capabilities** - Real tool use, not just LLM chat
+2. **Weave showcase** - Every decision traced and visible
+3. **Vercel AI SDK** - Agent orchestration demonstration
+4. **PRD alignment** - Directly supports "Agentic Search" skill
+5. **iOS ready** - SearchView already built, just needs backend
+
+### Example Queries Supported
+- "give me images that have red flowers"
+- "show me event flyers from this week"
+- "find photos taken in San Francisco"
+- "screenshots with code or programming"
+
+### Success Criteria
+- Natural language queries work (no exact keyword matching needed)
+- Agent intelligently selects appropriate tools
+- Response time < 3 seconds
+- Full trace visibility in Weave dashboard
+- iOS SearchView displays results correctly
+
+### Integration Points
+- Embeddings already generated (nomic-embed-text)
+- SQLite schema ready (no changes needed)
+- iOS UI complete (SearchView.swift)
+- Ollama service configured
+
+### Documentation Updated
+- `docs/PROGRESS.md` - Added Milestone H-2 to Phase 2
+- `docs/PROGRESS.md` - Updated Overall Status table
+- `docs/CHANGELOG.md` - This entry
+
+### Next Steps
+Implementation of search-agent.ts, search-tools.ts, and search.ts routes.
+
+---
+
+## [#6] Removed ModelManager from macOS App
+**Date:** Feb 1, 2026  
+**Type:** Architecture Cleanup  
+**Milestone:** D (continued refactor)
+
+### Summary
+Removed stale `ModelManager` class from macOS app. With the architecture refactor completed in #2, the macOS app no longer needs to check Ollama model availability since all model interactions happen server-side. The server's health check already verifies Ollama connectivity.
+
+### Changes
+
+#### macOS App (CLEANUP)
+- **Deleted ModelManager**: Removed `Managers/ModelManager.swift`
+  - Previously checked for local Ollama models (`qwen3-vl:8b`, `nomic-embed-text`)
+  - No longer needed - server handles all model operations
+  
+- **Updated AppState**: Removed Ollama-related state
+  - `Models/AppState.swift` - Removed `ollamaStatus`, `loadedModels`, `ollamaError`, `analysisProgress`
+  - Removed `modelManager` lazy property
+  
+- **Updated StatusDashboardView**: Removed Model Analysis UI
+  - `Views/StatusDashboardView.swift` - Removed `ModelAnalysisCard` component
+  - Removed "Check Ollama Status" button
+  - Removed model list display
+  - Removed Ollama installation instructions
+
+### Rationale
+The macOS app's role is now:
+1. Upload photos to server (with metadata + compression)
+2. Monitor server/tunnel status
+3. Display queue statistics
+
+The server is responsible for:
+1. All Ollama model interactions (vision, embeddings, classification)
+2. Verifying model availability via its own health checks
+3. Managing the analysis pipeline
+
+This eliminates duplicate logic and aligns with the centralized architecture established in #2.
+
+### Files Deleted
+- `photo-agent-macos/photo-agent-macos/Managers/ModelManager.swift` ❌
+
+### Files Updated
+- `photo-agent-macos/photo-agent-macos/Models/AppState.swift` ✅
+- `photo-agent-macos/photo-agent-macos/Views/StatusDashboardView.swift` ✅
+
+---
+
 ## [#5] iOS Photo Upload + Approvals UI (Milestones P+Q)
 **Date:** Feb 1, 2026  
 **Type:** New Feature  

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import assetsRouter from './routes/assets';
 import devicesRouter from './routes/devices';
 import approvalsRouter from './routes/approvals';
+import searchRouter from './routes/search';
 import { serverAdapter } from './services/queue';
 import { initWeave } from './services/weave';
 import './db/sqlite';
@@ -20,6 +21,7 @@ app.use(express.json());
 app.use('/api/assets', assetsRouter);
 app.use('/api/devices', devicesRouter);
 app.use('/api/approvals', approvalsRouter);
+app.use('/api/search', searchRouter);
 app.use('/admin/queues', serverAdapter.getRouter());
 
 app.get('/health', (req: Request, res: Response) => {
