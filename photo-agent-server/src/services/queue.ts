@@ -41,6 +41,10 @@ export const calendarQueue = new Bull('calendar-creation', {
   redis: redisConfig
 });
 
+export const rsvpQueue = new Bull('rsvp-automation', {
+  redis: redisConfig
+});
+
 // Bull Board UI
 export const serverAdapter = new ExpressAdapter();
 serverAdapter.setBasePath('/admin/queues');
@@ -51,7 +55,8 @@ createBullBoard({
     new BullAdapter(imageAnalysisQueue),
     new BullAdapter(intentRoutingQueue),
     new BullAdapter(eventSearchQueue),
-    new BullAdapter(calendarQueue)
+    new BullAdapter(calendarQueue),
+    new BullAdapter(rsvpQueue)
   ],
   serverAdapter
 });
@@ -74,6 +79,7 @@ process.on('SIGTERM', async () => {
   await intentRoutingQueue.close();
   await eventSearchQueue.close();
   await calendarQueue.close();
+  await rsvpQueue.close();
 });
 
 console.log('✅ Bull queue service initialized');

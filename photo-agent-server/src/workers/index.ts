@@ -6,6 +6,7 @@ import './image-analysis';
 import './intent-routing';
 import './event-search';
 import './calendar-creation';
+import './rsvp-automation';
 
 // Initialize Weave for all workers
 (async () => {

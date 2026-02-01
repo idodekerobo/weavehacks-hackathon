@@ -19,6 +19,12 @@ struct MainTabView: View {
                 }
                 .badge(appState.pendingApprovalsCount > 0 ? appState.pendingApprovalsCount : 0)
             
+            // RSVP
+            RSVPView()
+                .tabItem {
+                    Label("RSVP", systemImage: "calendar.badge.plus")
+                }
+            
             // Search
             SearchView()
                 .tabItem {
