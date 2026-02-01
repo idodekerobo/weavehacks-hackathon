@@ -77,6 +77,11 @@ db.exec(`
     googleCalendarEventId TEXT,
     calendarCreatedAt TEXT,
     calendarError TEXT,
+    rsvpStatus TEXT,
+    rsvpSessionId TEXT,
+    rsvpRecordingUrl TEXT,
+    confirmationNumber TEXT,
+    confirmationScreenshot TEXT,
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (assetId) REFERENCES assets(id)

@@ -6,6 +6,7 @@ import devicesRouter from './routes/devices';
 import approvalsRouter from './routes/approvals';
 import searchRouter from './routes/search';
 import oauthRouter from './routes/oauth';
+import rsvpRouter from './routes/rsvp';
 import { serverAdapter } from './services/queue';
 import { initWeave } from './services/weave';
 import './db/sqlite';
@@ -24,6 +25,7 @@ app.use('/api/devices', devicesRouter);
 app.use('/api/approvals', approvalsRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/oauth', oauthRouter);
+app.use('/api/rsvp', rsvpRouter);
 app.use('/admin/queues', serverAdapter.getRouter());
 
 app.get('/health', (req: Request, res: Response) => {
