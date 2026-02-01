@@ -17,7 +17,7 @@ struct MainTabView: View {
                 .tabItem {
                     Label("Inbox", systemImage: "tray.fill")
                 }
-                .badge(appState.pendingApprovalsCount > 0 ? appState.pendingApprovalsCount : nil)
+                .badge(appState.pendingApprovalsCount > 0 ? appState.pendingApprovalsCount : 0)
             
             // Search
             SearchView()
