@@ -1,6 +1,6 @@
 # Photos-as-Intent Agent — Progress Tracker
 
-**Last Updated:** Feb 1, 2026 (Consolidated streaming search, iOS SSE support, OpenTelemetry tracing)
+**Last Updated:** Feb 1, 2026 (Migrated to AI SDK 6 ToolLoopAgent + ollama-ai-provider-v2)
 
 ---
 
@@ -771,6 +771,15 @@ npm install ai @ai-sdk/openai
 - Non-streaming `/api/search` wrapper for backward compatibility
 - iOS `SearchView.swift` updated to consume SSE stream
 - Real-time feedback: status, tool calls, partial results, text deltas, completion
+
+**ToolLoopAgent Migration (Feb 1, 2026):**
+- Upgraded from AI SDK 4.x to AI SDK 6.x
+- Migrated from `streamText()` to `ToolLoopAgent` class for agent orchestration
+- Replaced `ollama-ai-provider` with `ollama-ai-provider-v2` for AI SDK 6 compatibility
+- Agent instance is created once and reused (singleton pattern)
+- Uses `agent.stream()` for streaming and `agent.generate()` for non-streaming
+- Stop condition set to `stepCountIs(MAX_ITERATIONS)` (5 steps max)
+- OpenTelemetry telemetry enabled via `experimental_telemetry`
 
 **Success Criteria:**
 - ✅ Natural language queries work without exact keyword matching
