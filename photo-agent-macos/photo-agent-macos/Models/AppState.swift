@@ -33,6 +33,7 @@ class AppState: ObservableObject {
     // Model analysis state
     @Published var ollamaStatus: ServiceStatus = .stopped
     @Published var loadedModels: [String] = []
+    @Published var ollamaError: String?
     @Published var analysisProgress: (current: Int, total: Int) = (0, 0)
     @Published var analysisError: String?
     
