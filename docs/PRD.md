@@ -192,16 +192,16 @@ The product ships with a core capability (“agentic search”), then allows use
 ## Core Skill: Agentic Search (REQUIRED - Priority #1)
 
 ### What it does
-Conversational, natural language search using **Vercel AI SDK** agent loop with tool calls. Users can search their photos with queries like:
+Conversational, natural language search using **OpenAI Agents SDK** agent loop with tool calls. Users can search their photos with queries like:
 - "give me images that have red flowers"
 - "show me event flyers from this week"
 - "find photos taken in San Francisco"
 - "screenshots with code or programming"
 
 ### Technical architecture
-- **Vercel AI SDK**: Agent orchestration with tool calling
-- **Weave**: Full tracing of agent decisions, tool executions, and LLM calls
-- **Ollama (nomic-embed-text)**: Generate query embeddings
+- **OpenAI Agents SDK**: Agent orchestration with tool calling (gpt-4o-mini)
+- **Weave**: Full tracing of agent decisions, tool executions, and LLM calls (via WeaveTracingProcessor)
+- **Ollama (nomic-embed-text)**: Generate query embeddings (local, free)
 - **SQLite**: Cosine similarity search over stored embeddings
 
 ### Search tools available to agent
