@@ -30,10 +30,26 @@ class AppState: ObservableObject {
     @Published var photosTotalCount: Int = 0
     @Published var photosError: String?
     
+    // Approvals state
+    @Published var pendingApprovalsCount: Int = 0
+    
+    // Device identifier for approvals
+    let deviceId: String
+    
     lazy var serverManager = ServerManager(appState: self)
     lazy var tunnelManager = TunnelManager(appState: self)
     lazy var photosManager = PhotosManager(appState: self)
     
+    init() {
+        // Generate or retrieve persistent device ID
+        if let savedDeviceId = UserDefaults.standard.string(forKey: "macos_deviceId") {
+            self.deviceId = savedDeviceId
+        } else {
+            let newDeviceId = "macos-\(UUID().uuidString)"
+            UserDefaults.standard.set(newDeviceId, forKey: "macos_deviceId")
+            self.deviceId = newDeviceId
+        }
+    }
 }
 
 enum PhotoAuthStatus: String {

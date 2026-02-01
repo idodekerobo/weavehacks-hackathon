@@ -60,14 +60,14 @@ This order prioritizes features that provide immediate testable value and builds
 | Priority | Milestone | Status | Description | Test After |
 |----------|-----------|--------|-------------|------------|
 | **#1** | **H-2** | 🟡 In Progress | **Agentic search with tool calls** (Vercel AI SDK + Weave) | Can I search "red flowers" and get results? |
-| **#2** | **J** | 🔴 Next | **Event extraction from flyers** (Ollama structured output) | Does it extract event name, date, location? |
-| **#3** | **K** | 🔴 After | **Web search for canonical event** (Browserbase automation) | Does it find the right event URL? |
-| **#4** | **M** | 🔴 Then | **Calendar integration** (EventKit - local, easy) | Do events appear in Calendar.app? ✅ |
-| **#5** | **N** | 🔴 Follow | **macOS approvals inbox UI** (clone iOS) | Can I approve events on Mac? |
+| **#2** | **J** | ✅ Complete | **Event extraction from flyers** (Ollama structured output) | Does it extract event name, date, location? |
+| **#3** | **K** | ✅ Complete | **Web search for canonical event** (Browserbase automation) | Does it find the right event URL? |
+| **#4** | **M** | 🔴 Next | **Calendar integration** (EventKit - local, easy) | Do events appear in Calendar.app? ✅ |
+| **#5** | **N** | ✅ Complete | **macOS approvals inbox UI** (clone iOS) | Can I approve events on Mac? |
 
 **🎉 At this point, you have a COMPLETE DEMO** (search + extract + calendar + approvals)
 
-**✅ MILESTONE J & K COMPLETE!** Next up: Calendar Integration (M)
+**✅ MILESTONE J, K & N COMPLETE!** Next up: Calendar Integration (M)
 
 ---
 
@@ -1193,6 +1193,101 @@ CREATE TABLE approvals (
 - `photo-agent-server/src/db/sqlite.ts` ✅ (updated - approvals table)
 - `photo-agent-server/src/workers/intent-routing.ts` ✅ (updated - create approvals)
 - `photo-agent-server/src/index.ts` ✅ (updated - approvals router)
+
+---
+
+### ✅ Milestone N: macOS Approvals Inbox UI
+**Status:** ✅ Complete
+**Completed:** Feb 1, 2026
+**Prerequisites:** Milestone Q (iOS Approvals) ✅
+
+**What was built:**
+- **Sidebar Navigation** - Replaced single-view dashboard with NavigationSplitView
+  - Dashboard tab
+  - Approvals tab (with badge showing pending count)
+  - Settings tab
+  
+- **ApprovalManager.swift** - macOS-specific approvals manager (ported from iOS)
+  - Fetch approvals from server (tunnel URL or localhost)
+  - Filter by status (pending, approved, rejected, all)
+  - Approve/reject actions with API calls
+  - Updates `appState.pendingApprovalsCount` for badge
+  
+- **ApprovalInboxView.swift** - Master-detail approvals UI
+  - Master pane: List of approval cards with filters
+  - Detail pane: Full approval details with approve/reject buttons
+  - Segmented filter picker (Pending/Approved/Rejected/All)
+  - Selection highlighting
+  - Empty states and error handling
+  - Manual refresh button in toolbar
+  
+- **ApprovalDetailPane** - macOS-native detail view
+  - Header card with intent type, confidence, status
+  - Section cards: "What We Found", "Text Found in Image", "Why We Think This", "Proposed Action", "Details"
+  - Approve/Reject buttons (large, prominent, macOS-styled)
+  - Loading states during actions
+  - Error alerts
+  
+- **SettingsView.swift** - Basic settings view
+  - Device ID display
+  - Server port display
+  - Photo library authorization status
+  - Tunnel URL display
+  
+- **Updated ContentView.swift** - Sidebar navigation
+  - NavigationSplitView with sidebar and detail
+  - Badge on Approvals tab showing pending count
+  - Proper macOS window sizing
+  
+- **Updated AppState.swift** - Added approval state
+  - `pendingApprovalsCount` for badge
+  - `deviceId` (persistent, prefixed with "macos-")
+
+**Key differences from iOS:**
+- Master-detail layout instead of sheet modal
+- Sidebar navigation instead of tab bar
+- HSplitView for resizable panes
+- macOS-native button styles (`.borderedProminent`, `.bordered`)
+- Larger control sizes (`.controlSize(.large)`)
+- NSColor backgrounds
+- Toolbar items for refresh
+
+**Architecture decisions:**
+- Direct port of `ApprovalManager` from iOS (code reuse)
+- Same data models: `Approval`, `ExtractedData`, `ProposedAction`, `ApprovalsResponse`, `UpdateResponse`
+- Polling on view appear + manual refresh (no real-time yet)
+- Falls back to localhost if tunnel URL unavailable
+- Device ID stored in UserDefaults with "macos-" prefix
+
+**User flow:**
+1. Open macOS app → Navigate to "Approvals" tab in sidebar
+2. See list of approvals filtered by status (default: Pending)
+3. Click approval card → Detail pane shows full information
+4. Review extracted data, OCR text, reasoning, proposed action
+5. Click "Approve" (green) or "Reject" (red)
+6. Approval status updates in database
+7. List refreshes automatically
+8. Badge count updates in sidebar
+
+**Files:**
+- `photo-agent-macos/Models/AppState.swift` ✅ (updated)
+- `photo-agent-macos/Managers/ApprovalManager.swift` ✅ (new)
+- `photo-agent-macos/Views/ApprovalInboxView.swift` ✅ (new)
+- `photo-agent-macos/Views/SettingsView.swift` ✅ (new)
+- `photo-agent-macos/ContentView.swift` ✅ (updated with sidebar navigation)
+- `photo-agent-macos/ViewModels/*` ✅ (deleted - not using ViewModel pattern)
+
+**Testing:**
+- [ ] Verify approvals list loads on view appear
+- [ ] Test filter picker (Pending/Approved/Rejected/All)
+- [ ] Test approve action → status updates → list refreshes
+- [ ] Test reject action → status updates → list refreshes
+- [ ] Test manual refresh button
+- [ ] Test sidebar badge updates with pending count
+- [ ] Test empty states for each filter
+- [ ] Test error handling (server offline)
+- [ ] Test master-detail selection state
+- [ ] Test fallback to localhost when tunnel offline
 
 ---
 
