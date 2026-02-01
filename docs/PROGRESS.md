@@ -1,6 +1,6 @@
 # Photos-as-Intent Agent — Progress Tracker
 
-**Last Updated:** Feb 1, 2026 (Updated Milestone J & K for Browserbase-only implementation)
+**Last Updated:** Feb 1, 2026 (Fixed Mac app server detection + Weave API key)
 
 ---
 
@@ -1610,6 +1610,8 @@ docker run -d -p 6379:6379 redis
 15. **iCloud Photos required** - Assumed enabled for cross-device photo syncing
 16. **Standard Redis setup** - Uses ioredis client connecting to local Redis service
 17. **npm scripts for workers** - Server and workers run concurrently via package.json scripts
+18. **Smart server detection (Feb 1)** - Mac app reuses existing healthy servers, kills unhealthy ones before restart
+19. **Weave API key fix (Feb 1)** - Changed from WEAVE_API_KEY to WANDB_API_KEY (required by Weave library internally)
 
 ---
 

@@ -11,9 +11,9 @@ export async function initWeave() {
     return weaveClient;
   }
 
-  const apiKey = process.env.WEAVE_API_KEY;
+  const apiKey = process.env.WANDB_API_KEY;
   if (!apiKey) {
-    console.warn('⚠️  WEAVE_API_KEY not found in .env - Weave tracing disabled');
+    console.warn('⚠️  WANDB_API_KEY not found in .env - Weave tracing disabled');
     return null;
   }
 
