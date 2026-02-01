@@ -173,6 +173,9 @@ class PhotosManager: ObservableObject {
             fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
             fetchOptions.fetchLimit = limit
             
+            // Prefetch the properties we'll need to avoid on-demand fetching
+            fetchOptions.includeAssetSourceTypes = [.typeUserLibrary, .typeCloudShared, .typeiTunesSynced]
+            
             // Fetch all assets
             let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
             
@@ -233,13 +236,37 @@ class PhotosManager: ObservableObject {
     }
     
     /// Get image data from PHAsset
-    private func getImageData(from asset: PHAsset) async -> Data? {
-        return await withCheckedContinuation { continuation in
+    private func getImageData(from asset: PHAsset) async throws -> Data {
+        return try await withCheckedThrowingContinuation { continuation in
             let options = PHImageRequestOptions()
             options.deliveryMode = .highQualityFormat
             options.isNetworkAccessAllowed = true
+            options.isSynchronous = false
+            options.version = .current  // Use current version (edited if available)
             
-            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, dataUTI, orientation, info in
+                // Check for errors
+                if let error = info?[PHImageErrorKey] as? Error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                // Check if request was cancelled
+                if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled {
+                    continuation.resume(throwing: PhotosManagerError.requestCancelled)
+                    return
+                }
+                
+                // Check if image is in iCloud and needs to be downloaded
+                if let isInCloud = info?[PHImageResultIsInCloudKey] as? Bool, isInCloud {
+                    print("⚠️ Asset is in iCloud, downloading...")
+                }
+                
+                guard let data = data else {
+                    continuation.resume(throwing: PhotosManagerError.invalidResponse)
+                    return
+                }
+                
                 continuation.resume(returning: data)
             }
         }
@@ -274,9 +301,7 @@ class PhotosManager: ObservableObject {
         }
         
         // Get image data
-        guard let imageData = await getImageData(from: phAsset) else {
-            throw PhotosManagerError.invalidResponse
-        }
+        let imageData = try await getImageData(from: phAsset)
         
         // Compress image
         guard let compressedData = compressImage(imageData) else {
@@ -358,6 +383,7 @@ enum PhotosManagerError: LocalizedError {
     case invalidResponse
     case serverError(statusCode: Int)
     case scanInProgress
+    case requestCancelled
     
     var errorDescription: String? {
         switch self {
@@ -369,6 +395,8 @@ enum PhotosManagerError: LocalizedError {
             return "Server error: \(statusCode)"
         case .scanInProgress:
             return "A scan is already in progress"
+        case .requestCancelled:
+            return "Image request was cancelled"
         }
     }
 }

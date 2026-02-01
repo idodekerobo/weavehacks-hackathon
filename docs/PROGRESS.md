@@ -1,6 +1,6 @@
 # Photos-as-Intent Agent — Progress Tracker
 
-**Last Updated:** Feb 1, 2026 (Fixed Mac app server detection + Weave API key)
+**Last Updated:** Feb 1, 2026 (Fixed photo transfer error handling)
 
 ---
 
@@ -1612,6 +1612,21 @@ docker run -d -p 6379:6379 redis
 17. **npm scripts for workers** - Server and workers run concurrently via package.json scripts
 18. **Smart server detection (Feb 1)** - Mac app reuses existing healthy servers, kills unhealthy ones before restart
 19. **Weave API key fix (Feb 1)** - Changed from WEAVE_API_KEY to WANDB_API_KEY (required by Weave library internally)
+
+---
+
+## 📝 Recent Changes
+
+### Feb 1, 2026 - Fixed Photo Transfer Error Handling
+- **Fixed:** Missing error handling in `PhotosManager.swift` causing "data couldn't be read" errors
+- **Added:** Proper PHKit error checking in `getImageData` method
+- **Added:** `requestCancelled` error case to `PhotosManagerError` enum
+- **Changed:** `getImageData` now throws errors instead of returning optional
+- **Added:** Asset source type prefetching to avoid on-demand metadata fetching
+- **Added:** Error handling for iCloud assets and cancelled requests
+- **Result:** Photo upload now properly handles and reports PHKit errors instead of silent failures
+
+### Feb 1, 2026 - Fixed Mac App Server Detection + Weave API Key
 
 ---
 
