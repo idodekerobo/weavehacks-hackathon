@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { agentSearch } from '../services/search-agent';
+import { agentSearch, agentSearchStreaming } from '../services/search-agent';
 
 const router = Router();
 
@@ -9,6 +9,7 @@ const SEARCH_TIMEOUT_MS = 90000;
 /**
  * GET /api/search
  * Natural language search over photos using agentic search with tool calls
+ * Returns final results (non-streaming) - internally uses streaming implementation
  * 
  * Query params:
  *   - q: search query (required)
@@ -85,6 +86,86 @@ router.get('/', async (req, res) => {
       results: [],
       total: 0
     });
+  }
+});
+
+/**
+ * GET /api/search/stream
+ * Streaming version of the search endpoint
+ * Returns Server-Sent Events (SSE) with progressive updates
+ * 
+ * Event types:
+ *   - status: Agent status updates
+ *   - tool-call: When the agent calls a tool
+ *   - partial-results: Intermediate results as they come in
+ *   - text-delta: Agent reasoning text chunks
+ *   - complete: Final results with all data
+ *   - error: Error occurred
+ * 
+ * Query params:
+ *   - q: search query (required)
+ *   - deviceId: device identifier (optional)
+ *   - maxResults: max number of results (optional, default 10)
+ */
+router.get('/stream', async (req, res) => {
+  const requestStartTime = Date.now();
+  
+  try {
+    const query = req.query.q as string;
+    const deviceId = req.query.deviceId as string | undefined;
+    const maxResults = req.query.maxResults 
+      ? parseInt(req.query.maxResults as string) 
+      : 10;
+
+    // Validate query
+    if (!query || query.trim().length === 0) {
+      console.log('❌ Stream search rejected: empty query');
+      return res.status(400).json({
+        success: false,
+        error: 'Query parameter "q" is required'
+      });
+    }
+
+    console.log(`\n📱 Streaming search request from ${deviceId || 'unknown device'}`);
+    console.log(`   Query: "${query}"`);
+
+    // Set headers for Server-Sent Events
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    // Start streaming
+    const stream = agentSearchStreaming({
+      query: query.trim(),
+      deviceId,
+      maxResults
+    });
+
+    for await (const chunk of stream) {
+      // Send each chunk as an SSE event
+      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      
+      // If this is the complete event, end the stream
+      if (chunk.type === 'complete' || chunk.type === 'error') {
+        res.end();
+        break;
+      }
+    }
+
+    const requestTime = Date.now() - requestStartTime;
+    console.log(`✅ Streaming search completed in ${requestTime}ms`);
+
+  } catch (error: any) {
+    const requestTime = Date.now() - requestStartTime;
+    console.error(`❌ Streaming search error after ${requestTime}ms:`, error);
+    
+    // Send error as SSE event
+    res.write(`data: ${JSON.stringify({
+      type: 'error',
+      error: error.message || 'Internal server error',
+      timestamp: Date.now() - requestStartTime
+    })}\n\n`);
+    res.end();
   }
 });
 

@@ -1,4 +1,4 @@
-import { generateText } from 'ai';
+import { streamText } from 'ai';
 import { ollama } from 'ollama-ai-provider';
 import { 
   searchByEmbedding, 
@@ -8,11 +8,16 @@ import {
   filterByLocation,
   combineResults
 } from './search-tools';
-import { createTracedOp, logAttributes } from './weave';
+import { logAttributes } from './weave';
 
-// Use the same model as image analysis for consistency
-const AGENT_MODEL = 'qwen3-vl:8b';
+// Model configuration
+// Use Mistral for agentic search (better function calling) 
+// Use Qwen3-VL for vision tasks (image analysis) - e.g., 'qwen3-vl:8b'
+const AGENT_MODEL = 'mistral:instruct';
 const MAX_ITERATIONS = 5;
+
+// Fallback: Direct search without agent (for testing/debugging)
+const USE_AGENT = true; // Set to true to use agent, false for direct search
 
 export interface SearchRequest {
   query: string;
@@ -43,28 +48,17 @@ export interface SearchResultItem {
   filename: string | null;
 }
 
-/**
- * Agent-based search implementation
- * Uses Vercel AI SDK with Ollama provider for tool calling
- */
-const _agentSearchImpl = async (request: SearchRequest): Promise<SearchResponse> => {
-  const startTime = Date.now();
-  const { query, maxResults = 10 } = request;
-  
-  console.log('\n🤖 Starting agent search...');
-  console.log(`   Query: "${query}"`);
-  console.log(`   Max results: ${maxResults}`);
-  
-  // Log attributes to Weave
-  logAttributes({
-    userQuery: query,
-    maxResults,
-    deviceId: request.deviceId || 'unknown'
-  });
-  
-  try {
-    // System prompt for the search agent
-    const systemPrompt = `You are a helpful search agent for a photo library system.
+// Streaming event types for progressive updates
+export type SearchStreamEvent = 
+  | { type: 'status'; message: string; timestamp: number }
+  | { type: 'tool-call'; toolName: string; args: any; timestamp: number }
+  | { type: 'partial-results'; count: number; total: number; timestamp: number }
+  | { type: 'text-delta'; text: string; timestamp: number }
+  | { type: 'complete'; results: SearchResultItem[]; total: number; toolCalls: string[]; reasoning: string; executionTime: number; timestamp: number }
+  | { type: 'error'; error: string; timestamp: number };
+
+// System prompt for the search agent
+const SYSTEM_PROMPT = `You are a helpful search agent for a photo library system.
 
 Your job is to help users find photos using natural language queries. You have access to several search tools:
 
@@ -87,181 +81,278 @@ IMPORTANT:
 - Include the photoLibraryId for each result (iOS needs this to fetch images)
 - Be conversational and helpful in your reasoning`;
 
+/**
+ * Streaming agent-based search implementation
+ * Uses Vercel AI SDK with Ollama provider for tool calling
+ * Returns an async generator that yields progressive updates
+ */
+export async function* agentSearchStreaming(request: SearchRequest): AsyncGenerator<SearchStreamEvent> {
+  const startTime = Date.now();
+  const { query, maxResults = 10 } = request;
+  
+  console.log('\n🤖 Starting streaming agent search...');
+  console.log(`   Query: "${query}"`);
+  console.log(`   Max results: ${maxResults}`);
+  console.log(`   Model: ${AGENT_MODEL}`);
+  console.log(`   Max iterations: ${MAX_ITERATIONS}`);
+  console.log(`   Mode: ${USE_AGENT ? 'AGENT' : 'DIRECT (no agent)'}`);
+  
+  // Log attributes to Weave
+  logAttributes({
+    userQuery: query,
+    maxResults,
+    deviceId: request.deviceId || 'unknown',
+    model: AGENT_MODEL,
+    useAgent: USE_AGENT,
+    streaming: true,
+    startTime: new Date(startTime).toISOString()
+  });
+  
+  try {
+    // FALLBACK MODE: Direct search without agent
+    if (!USE_AGENT) {
+      console.log('   🔧 Using direct search (bypassing agent)...');
+      
+      yield {
+        type: 'status',
+        message: 'Using direct embedding search...',
+        timestamp: Date.now() - startTime
+      };
+      
+      // Directly call searchByEmbedding tool
+      const searchResult = await (searchByEmbedding as any).execute(
+        { query, topK: maxResults },
+        {}
+      );
+      
+      const executionTime = Date.now() - startTime;
+      
+      console.log(`\n   ✅ Direct search complete!`);
+      console.log(`   📊 Results: ${searchResult.results.length}`);
+      console.log(`   ⏱️  Total time: ${executionTime}ms\n`);
+      
+      logAttributes({
+        toolCallsUsed: ['searchByEmbedding'],
+        resultsReturned: searchResult.results.length,
+        executionTime,
+        success: true,
+        mode: 'direct'
+      });
+      
+      yield {
+        type: 'complete',
+        results: searchResult.results,
+        total: searchResult.results.length,
+        toolCalls: ['searchByEmbedding (direct)'],
+        reasoning: 'Direct embedding search without agent',
+        executionTime,
+        timestamp: Date.now() - startTime
+      };
+      return;
+    }
+    
+    // AGENT MODE: Full agentic search with streaming tool calls
     const userPrompt = `Find photos matching: "${query}"
 
 Return up to ${maxResults} results. Be smart about which tools to use.`;
 
-    // Run the agent with tool calling
-    let result;
-    try {
-      result = await generateText({
-        model: ollama(AGENT_MODEL),
-        system: systemPrompt,
-        prompt: `Here is the user's prompt:\n${userPrompt}`,
-        tools: {
-          searchByEmbedding,
-          searchByText,
-          filterByIntent,
-          filterByDateRange,
-          filterByLocation,
-          combineResults
-        },
-        maxSteps: MAX_ITERATIONS,
-        experimental_telemetry: {
-          isEnabled: true,
-          metadata: {
-            query: query,
-            maxResults: maxResults,
-            deviceId: request.deviceId || 'unknown',
-          },
-        },
-        // Add these for debugging
-        onStepFinish: (step) => {
-          console.log(`   📍 Step ${step.stepType} finished:`, {
-            stepType: step.stepType,
-            toolCalls: step.toolCalls?.length || 0,
-            text: step.text?.slice(0, 50) || 'none'
-          });
-        },
-      });
-      
-      clearInterval(progressInterval);
-    } catch (error) {
-      clearInterval(progressInterval);
-      throw error;
-    }
-
-    const ollamaTime = Date.now() - ollamaStartTime;
-    console.log(`   ✅ Ollama responded in ${ollamaTime}ms`);
-
-    // Log the raw response structure for debugging
-    console.log(`   📊 Response steps: ${result.steps?.length || 0}`);
-    console.log(`   📊 Tool calls: ${result.toolCalls?.length || 0}`);
-    console.log(`   📊 Tool results: ${result.toolResults?.length || 0}`);
-        maxSteps: MAX_ITERATIONS,
-        experimental_telemetry: {
-          isEnabled: true,
-          metadata: {
-            query: query,
-            maxResults: maxResults,
-            deviceId: request.deviceId || 'unknown',
-          },
-        },
-        // Add these for debugging
-        onStepFinish: (step) => {
-          console.log(`   📍 Step ${step.stepType} finished:`, {
-            stepType: step.stepType,
-            toolCalls: step.toolCalls?.length || 0,
-            text: step.text?.slice(0, 50) || 'none'
-          });
-        },
-      });
-      
-      clearInterval(progressInterval);
-    } catch (error) {
-      clearInterval(progressInterval);
-      throw error;
-    }
-
-    const ollamaTime = Date.now() - ollamaStartTime;
-    console.log(`   ✅ Ollama responded in ${ollamaTime}ms`);
-
-    // Log the raw response structure for debugging
-    console.log(`   📊 Response steps: ${result.steps?.length || 0}`);
-    console.log(`   📊 Tool calls: ${result.toolCalls?.length || 0}`);
-    console.log(`   📊 Tool results: ${result.toolResults?.length || 0}`);
-
-    // Extract tool calls for logging
-    const toolCalls: string[] = [];
-    let allResults: any[] = [];
+    console.log('   📤 Starting streaming request to Ollama...');
     
-    // Process tool results from the agent's execution
-    if (result.toolCalls && result.toolCalls.length > 0) {
-      for (const toolCall of result.toolCalls) {
-        toolCalls.push(toolCall.toolName);
-        console.log(`   🔧 Tool used: ${toolCall.toolName}`);
-      }
-    }
+    yield {
+      type: 'status',
+      message: 'Agent started processing...',
+      timestamp: Date.now() - startTime
+    };
 
-    // Extract results from tool results
-    if (result.toolResults && result.toolResults.length > 0) {
-      for (const toolResult of result.toolResults) {
-        if (toolResult.result && typeof toolResult.result === 'object') {
-          const resultData = toolResult.result as any;
+    // Stream the agent with tool calling
+    const result = streamText({
+      model: ollama(AGENT_MODEL),
+      system: SYSTEM_PROMPT,
+      prompt: userPrompt,
+      tools: {
+        searchByEmbedding,
+        searchByText,
+        filterByIntent,
+        filterByDateRange,
+        filterByLocation,
+        combineResults
+      },
+      maxSteps: MAX_ITERATIONS,
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: {
+          query: query,
+          maxResults: maxResults,
+          deviceId: request.deviceId || 'unknown',
+        },
+      },
+    });
+
+    let toolCallCount = 0;
+    let allResults: any[] = [];
+    const toolCalls: string[] = [];
+    let reasoningText = '';
+
+    // Stream tool calls and results as they happen
+    for await (const part of result.fullStream) {
+      if (part.type === 'tool-call') {
+        toolCallCount++;
+        toolCalls.push(part.toolName);
+        console.log(`   🔧 Tool call ${toolCallCount}: ${part.toolName}`);
+        
+        yield {
+          type: 'tool-call',
+          toolName: part.toolName,
+          args: part.args,
+          timestamp: Date.now() - startTime
+        };
+      } else if (part.type === 'tool-result') {
+        console.log(`   ✅ Tool result received`);
+        
+        // Extract results from tool result
+        if (part.result && typeof part.result === 'object') {
+          const resultData = part.result as any;
           if (resultData.results && Array.isArray(resultData.results)) {
+            console.log(`      → Got ${resultData.results.length} results`);
             allResults = allResults.concat(resultData.results);
+            
+            // Yield intermediate results
+            yield {
+              type: 'partial-results',
+              count: resultData.results.length,
+              total: allResults.length,
+              timestamp: Date.now() - startTime
+            };
           }
         }
+      } else if (part.type === 'text-delta') {
+        // Agent reasoning text
+        reasoningText += part.textDelta;
+        
+        yield {
+          type: 'text-delta',
+          text: part.textDelta,
+          timestamp: Date.now() - startTime
+        };
       }
     }
 
     // Deduplicate results
+    console.log(`   🔀 Deduplicating ${allResults.length} total results...`);
     const seenIds = new Set<string>();
-    const uniqueResults = allResults.filter(result => {
-      if (seenIds.has(result.id)) {
+    const uniqueResults = allResults.filter(r => {
+      if (seenIds.has(r.id)) {
         return false;
       }
-      seenIds.add(result.id);
+      seenIds.add(r.id);
       return true;
     });
+    console.log(`   ✅ ${uniqueResults.length} unique results after deduplication`);
 
     // Take top N results
     const finalResults = uniqueResults.slice(0, maxResults);
 
     // Format results for iOS
-    const formattedResults: SearchResultItem[] = finalResults.map(result => ({
-      id: result.id,
-      photoLibraryId: result.photoLibraryId,
-      intentType: result.intentType || null,
-      summary: result.summary || null,
-      ocrText: result.ocrText || null,
-      confidence: result.confidence || null,
-      creationDate: result.creationDate || null,
-      filename: result.filename || null
+    const formattedResults: SearchResultItem[] = finalResults.map(r => ({
+      id: r.id,
+      photoLibraryId: r.photoLibraryId,
+      intentType: r.intentType || null,
+      summary: r.summary || null,
+      ocrText: r.ocrText || null,
+      confidence: r.confidence || null,
+      creationDate: r.creationDate || null,
+      filename: r.filename || null
     }));
 
     const executionTime = Date.now() - startTime;
     
-    console.log(`   ✅ Agent search complete`);
-    console.log(`   Results: ${formattedResults.length}`);
-    console.log(`   Tools used: ${toolCalls.join(', ') || 'none'}`);
-    console.log(`   Time: ${executionTime}ms\n`);
+    console.log(`\n   ✅ Streaming search complete!`);
+    console.log(`   📊 Final results: ${formattedResults.length}`);
+    console.log(`   🔧 Tools used: ${toolCalls.join(', ') || 'none'}`);
+    console.log(`   ⏱️  Total time: ${executionTime}ms`);
+    console.log(`   🤖 Agent reasoning: ${reasoningText.slice(0, 100) || 'none'}...\n`);
 
     // Log to Weave
     logAttributes({
       toolCallsUsed: toolCalls,
-      iterationCount: result.steps?.length || 0,
       resultsReturned: formattedResults.length,
-      executionTime
+      executionTime,
+      agentReasoning: reasoningText || 'none',
+      success: true,
+      streaming: true
     });
 
-    return {
-      success: true,
+    // Yield final results
+    yield {
+      type: 'complete',
       results: formattedResults,
       total: formattedResults.length,
-      agentSteps: {
-        toolCalls,
-        reasoning: result.text || 'Search completed',
-        iterations: result.steps?.length || 0
-      }
+      toolCalls,
+      reasoning: reasoningText || 'Search completed',
+      executionTime,
+      timestamp: Date.now() - startTime
     };
 
   } catch (error: any) {
-    console.error('❌ Agent search failed:', error);
+    const executionTime = Date.now() - startTime;
+    console.error(`\n   ❌ Streaming search failed after ${executionTime}ms`);
+    console.error(`   Error type: ${error.name || 'Unknown'}`);
+    console.error(`   Error message: ${error.message}`);
+    if (error.stack) {
+      console.error(`   Stack trace:\n${error.stack.split('\n').slice(0, 5).join('\n')}`);
+    }
     
     logAttributes({
       error: error.message,
-      executionTime: Date.now() - startTime
+      errorType: error.name,
+      executionTime,
+      success: false,
+      streaming: true
     });
 
-    return {
-      success: false,
-      results: [],
-      total: 0,
-      error: error.message || 'Search failed'
+    yield {
+      type: 'error',
+      error: error.message || 'Search failed',
+      timestamp: Date.now() - startTime
     };
   }
-};
+}
 
-// Export traced version
-export const agentSearch = createTracedOp('agentSearch', _agentSearchImpl);
+/**
+ * Non-streaming wrapper that consumes the stream and returns final result
+ * Useful for clients that don't support SSE
+ */
+export async function agentSearch(request: SearchRequest): Promise<SearchResponse> {
+  const stream = agentSearchStreaming(request);
+  
+  let finalResult: SearchResponse = {
+    success: false,
+    results: [],
+    total: 0,
+    error: 'No response received'
+  };
+  
+  for await (const event of stream) {
+    if (event.type === 'complete') {
+      finalResult = {
+        success: true,
+        results: event.results,
+        total: event.total,
+        agentSteps: {
+          toolCalls: event.toolCalls,
+          reasoning: event.reasoning,
+          iterations: event.toolCalls.length
+        }
+      };
+    } else if (event.type === 'error') {
+      finalResult = {
+        success: false,
+        results: [],
+        total: 0,
+        error: event.error
+      };
+    }
+  }
+  
+  return finalResult;
+}

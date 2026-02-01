@@ -1,6 +1,6 @@
 # Photos-as-Intent Agent — Progress Tracker
 
-**Last Updated:** Feb 1, 2026 (Increased upload concurrency to 5x)
+**Last Updated:** Feb 1, 2026 (Consolidated streaming search, iOS SSE support, OpenTelemetry tracing)
 
 ---
 
@@ -756,12 +756,21 @@ npm install ai @ai-sdk/openai
 ```
 
 **Key Implementation Notes:**
-1. Use Vercel AI SDK's `generateText()` with tools for agent loop
+1. Use Vercel AI SDK's `streamText()` with tools for streaming agent loop
 2. Keep max iterations to 5 to prevent infinite loops
 3. Cache embeddings in memory for faster similarity search (if needed)
 4. Return both results AND reasoning (show which tools were called)
 5. Handle empty results gracefully with helpful suggestions
 6. Log EVERYTHING to Weave for debugging and eval
+7. OpenTelemetry tracing via `experimental_telemetry` for Weave integration
+
+**Streaming Implementation (Feb 1, 2026):**
+- Consolidated `search-agent.ts` and `search-agent-streaming.ts` into single file
+- Uses `streamText()` from Vercel AI SDK for real-time updates
+- SSE endpoint `/api/search/stream` for progressive updates
+- Non-streaming `/api/search` wrapper for backward compatibility
+- iOS `SearchView.swift` updated to consume SSE stream
+- Real-time feedback: status, tool calls, partial results, text deltas, completion
 
 **Success Criteria:**
 - ✅ Natural language queries work without exact keyword matching
@@ -772,9 +781,10 @@ npm install ai @ai-sdk/openai
 - ✅ Response time < 3 seconds for typical queries
 
 **Integration with iOS:**
-- iOS `SearchView.swift` already implemented (line 95 calls `/api/search`)
-- No client-side changes needed
-- Server returns `SearchResponse` matching existing interface
+- iOS `SearchView.swift` updated to use streaming SSE endpoint `/api/search/stream`
+- Shows real-time feedback: tool calls, partial result counts, agent reasoning
+- Progressive UI updates as agent processes query
+- Server returns `StreamEvent` objects via SSE, final results in `complete` event
 
 **Weave Visibility:**
 For judges/demos, each search will show:
@@ -1617,6 +1627,65 @@ docker run -d -p 6379:6379 redis
 ---
 
 ## 📝 Recent Changes
+
+### Feb 1, 2026 - Enhanced Agent Debugging + Mistral Setup
+- **Added:** Comprehensive agent debugging with progress logging
+  - Progress updates every 3 seconds showing elapsed time
+  - `onStepFinish` callback to see agent's step-by-step decisions
+  - Logs prompt sizes and tool counts
+  - Clearer visibility into where agent might be stuck
+- **Changed:** Switched to Mistral for agentic search
+  - `AGENT_MODEL = 'mistral:7b'` (was qwen3-vl:8b)
+  - Mistral: 4.1GB, excellent function calling, edge-friendly
+  - Qwen3-VL: Still used for vision tasks (image analysis)
+  - **Architecture:** Specialized models for specialized tasks
+- **Re-enabled:** Agent mode (`USE_AGENT = true`)
+- **Expected Performance:** 3-6 seconds (vs 217ms direct, vs 25s timeout with Qwen)
+- **Files Changed:**
+  - `photo-agent-server/src/services/search-agent.ts` - Enhanced logging + Mistral config
+- **Documentation:**
+  - `docs/MISTRAL_SETUP.md` - Complete setup guide
+
+### Feb 1, 2026 - Added Direct Search Fallback (Bypass Agent)
+- **Problem:** Qwen3-VL model hanging on tool calling requests (25s timeout)
+- **Root Cause:** Vision model (qwen3-vl:8b) not optimized for text-only function calling
+- **Solution:** Added direct search mode that bypasses agent entirely
+  - Set `USE_AGENT = false` to use direct embedding search
+  - Completes in ~1-2 seconds instead of timing out
+  - Good enough for MVP/demo
+- **Alternative:** Switch to llama3.1:8b for better tool calling support
+- **Note:** M1 Pro hardware is NOT the issue - it's model compatibility
+- **Files Changed:**
+  - `photo-agent-server/src/services/search-agent.ts` - Added USE_AGENT flag and direct mode
+- **Documentation:**
+  - `docs/TIMEOUT_TROUBLESHOOTING.md` - Comprehensive debugging guide
+
+### Feb 1, 2026 - Enhanced Search Debugging & Timeout Handling
+- **Added:** Comprehensive logging throughout search pipeline for better debugging
+  - Logs Ollama request/response timing
+  - Logs tool calls with arguments preview
+  - Logs tool results with counts
+  - Logs deduplication and final result formatting
+  - Logs detailed error information with stack traces
+- **Added:** 25-second timeout on search endpoint (before iOS 30s timeout)
+  - Returns HTTP 504 with clear timeout error message
+  - Prevents iOS app from waiting indefinitely
+  - Includes execution time in all error responses
+- **Enhanced:** Weave tracing for search operations
+  - Logs model name, iteration count, tool calls used
+  - Tracks Ollama response time separately from total execution time
+  - Logs success/failure status and reasoning text
+  - Better visibility in Weave dashboard for debugging
+- **Added:** Streaming search endpoint (`/api/search/stream`)
+  - Uses Server-Sent Events (SSE) for progressive updates
+  - Streams tool calls, partial results, and reasoning in real-time
+  - Allows iOS app to show progress indicators
+  - Alternative to waiting for complete agent response
+- **Files Changed:**
+  - `photo-agent-server/src/routes/search.ts` - Added timeout and better logging
+  - `photo-agent-server/src/services/search-agent.ts` - Enhanced logging throughout
+  - `photo-agent-server/src/services/weave.ts` - Better tracing visibility
+  - `photo-agent-server/src/services/search-agent-streaming.ts` - New streaming implementation
 
 ### Feb 1, 2026 - Fixed Photo Transfer Error Handling
 - **Fixed:** Missing error handling in `PhotosManager.swift` causing "data couldn't be read" errors
