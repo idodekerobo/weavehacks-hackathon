@@ -92,20 +92,84 @@ IMPORTANT:
 Return up to ${maxResults} results. Be smart about which tools to use.`;
 
     // Run the agent with tool calling
-    const result = await generateText({
-      model: ollama(AGENT_MODEL),
-      system: systemPrompt,
-      prompt: userPrompt,
-      tools: {
-        searchByEmbedding,
-        searchByText,
-        filterByIntent,
-        filterByDateRange,
-        filterByLocation,
-        combineResults
-      },
-      maxSteps: MAX_ITERATIONS,
-    });
+    let result;
+    try {
+      result = await generateText({
+        model: ollama(AGENT_MODEL),
+        system: systemPrompt,
+        prompt: `Here is the user's prompt:\n${userPrompt}`,
+        tools: {
+          searchByEmbedding,
+          searchByText,
+          filterByIntent,
+          filterByDateRange,
+          filterByLocation,
+          combineResults
+        },
+        maxSteps: MAX_ITERATIONS,
+        experimental_telemetry: {
+          isEnabled: true,
+          metadata: {
+            query: query,
+            maxResults: maxResults,
+            deviceId: request.deviceId || 'unknown',
+          },
+        },
+        // Add these for debugging
+        onStepFinish: (step) => {
+          console.log(`   📍 Step ${step.stepType} finished:`, {
+            stepType: step.stepType,
+            toolCalls: step.toolCalls?.length || 0,
+            text: step.text?.slice(0, 50) || 'none'
+          });
+        },
+      });
+      
+      clearInterval(progressInterval);
+    } catch (error) {
+      clearInterval(progressInterval);
+      throw error;
+    }
+
+    const ollamaTime = Date.now() - ollamaStartTime;
+    console.log(`   ✅ Ollama responded in ${ollamaTime}ms`);
+
+    // Log the raw response structure for debugging
+    console.log(`   📊 Response steps: ${result.steps?.length || 0}`);
+    console.log(`   📊 Tool calls: ${result.toolCalls?.length || 0}`);
+    console.log(`   📊 Tool results: ${result.toolResults?.length || 0}`);
+        maxSteps: MAX_ITERATIONS,
+        experimental_telemetry: {
+          isEnabled: true,
+          metadata: {
+            query: query,
+            maxResults: maxResults,
+            deviceId: request.deviceId || 'unknown',
+          },
+        },
+        // Add these for debugging
+        onStepFinish: (step) => {
+          console.log(`   📍 Step ${step.stepType} finished:`, {
+            stepType: step.stepType,
+            toolCalls: step.toolCalls?.length || 0,
+            text: step.text?.slice(0, 50) || 'none'
+          });
+        },
+      });
+      
+      clearInterval(progressInterval);
+    } catch (error) {
+      clearInterval(progressInterval);
+      throw error;
+    }
+
+    const ollamaTime = Date.now() - ollamaStartTime;
+    console.log(`   ✅ Ollama responded in ${ollamaTime}ms`);
+
+    // Log the raw response structure for debugging
+    console.log(`   📊 Response steps: ${result.steps?.length || 0}`);
+    console.log(`   📊 Tool calls: ${result.toolCalls?.length || 0}`);
+    console.log(`   📊 Tool results: ${result.toolResults?.length || 0}`);
 
     // Extract tool calls for logging
     const toolCalls: string[] = [];

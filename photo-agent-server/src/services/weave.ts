@@ -19,7 +19,7 @@ export async function initWeave() {
 
   try {
     // Initialize Weave with project name
-    weaveClient = await weave.init('photo-agent');
+    weaveClient = await weave.init('idode-kerobo-stealth/weavehacks');
     console.log('✅ Weave observability initialized');
     return weaveClient;
   } catch (error) {
@@ -45,11 +45,14 @@ export function createTracedOp<T extends (...args: any[]) => any>(
 ): T {
   if (!weaveClient) {
     // If Weave is not initialized, return the original function
+    console.log(`⚠️  Weave not initialized - ${name} will run without tracing`);
     return fn;
   }
 
   // Wrap the function with Weave's op decorator
-  return weave.op(fn, { name }) as T;
+  const wrapped = weave.op(fn, { name }) as T;
+  console.log(`✅ Created traced operation: ${name}`);
+  return wrapped;
 }
 
 /**
