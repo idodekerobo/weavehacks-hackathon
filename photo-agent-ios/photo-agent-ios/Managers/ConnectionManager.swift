@@ -5,7 +5,9 @@
 //  Created by Idode Kerobo on 1/31/26.
 //
 
+import Combine
 import Foundation
+import UIKit
 
 /// Manages connection to the Mac server via tunnel
 @MainActor
