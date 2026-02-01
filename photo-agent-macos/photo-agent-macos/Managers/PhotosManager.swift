@@ -18,6 +18,7 @@ class PhotosManager: ObservableObject {
     
     // Configuration
     private let scanLimit = 1000 // Hardcoded for now, make configurable later
+    private let uploadConcurrency = 5 // Number of concurrent uploads
     private let serverURL: String
     
     // Internal state
@@ -113,22 +114,40 @@ class PhotosManager: ObservableObject {
             print("📸 Found \(assets.count) photos to process")
             appState.photosScanStatus = .running
             
-            // Process each photo
-            for (index, asset) in assets.enumerated() {
-                let metadata = extractMetadata(from: asset)
+            // Process photos concurrently using TaskGroup
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                var processedCount = 0
+                var activeUploads = 0
                 
-                // Send to server
-                do {
-                    try await sendToServer(metadata)
-                    appState.photosScannedCount = index + 1
-                    print("📸 Processed \(index + 1)/\(assets.count): \(metadata.photoLibraryId)")
-                } catch {
-                    print("⚠️ Failed to send asset to server: \(error.localizedDescription)")
-                    // Continue with next photo even if one fails
+                for (index, asset) in assets.enumerated() {
+                    // Wait if we've reached max concurrency
+                    if activeUploads >= uploadConcurrency {
+                        try? await group.next()
+                        activeUploads -= 1
+                    }
+                    
+                    // Add upload task to group
+                    group.addTask { [weak self] in
+                        guard let self = self else { return }
+                        
+                        let metadata = await self.extractMetadata(from: asset)
+                        
+                        do {
+                            try await self.sendToServer(metadata)
+                            await MainActor.run {
+                                processedCount += 1
+                                self.appState?.photosScannedCount = processedCount
+                                print("📸 Processed \(processedCount)/\(assets.count): \(metadata.photoLibraryId)")
+                            }
+                        } catch {
+                            print("⚠️ Failed to send asset to server: \(error.localizedDescription)")
+                        }
+                    }
+                    activeUploads += 1
                 }
                 
-                // Small delay to avoid overwhelming the server
-                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+                // Wait for all remaining uploads to complete
+                for try await _ in group {}
             }
             
             appState.photosScanStatus = .stopped
@@ -172,6 +191,9 @@ class PhotosManager: ObservableObject {
             let fetchOptions = PHFetchOptions()
             fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
             fetchOptions.fetchLimit = limit
+            
+            // Prefetch the properties we'll need to avoid on-demand fetching
+            fetchOptions.includeAssetSourceTypes = [.typeUserLibrary, .typeCloudShared, .typeiTunesSynced]
             
             // Fetch all assets
             let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
@@ -233,13 +255,37 @@ class PhotosManager: ObservableObject {
     }
     
     /// Get image data from PHAsset
-    private func getImageData(from asset: PHAsset) async -> Data? {
-        return await withCheckedContinuation { continuation in
+    private func getImageData(from asset: PHAsset) async throws -> Data {
+        return try await withCheckedThrowingContinuation { continuation in
             let options = PHImageRequestOptions()
             options.deliveryMode = .highQualityFormat
             options.isNetworkAccessAllowed = true
+            options.isSynchronous = false
+            options.version = .current  // Use current version (edited if available)
             
-            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, dataUTI, orientation, info in
+                // Check for errors
+                if let error = info?[PHImageErrorKey] as? Error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                
+                // Check if request was cancelled
+                if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled {
+                    continuation.resume(throwing: PhotosManagerError.requestCancelled)
+                    return
+                }
+                
+                // Check if image is in iCloud and needs to be downloaded
+                if let isInCloud = info?[PHImageResultIsInCloudKey] as? Bool, isInCloud {
+                    print("⚠️ Asset is in iCloud, downloading...")
+                }
+                
+                guard let data = data else {
+                    continuation.resume(throwing: PhotosManagerError.invalidResponse)
+                    return
+                }
+                
                 continuation.resume(returning: data)
             }
         }
@@ -274,9 +320,7 @@ class PhotosManager: ObservableObject {
         }
         
         // Get image data
-        guard let imageData = await getImageData(from: phAsset) else {
-            throw PhotosManagerError.invalidResponse
-        }
+        let imageData = try await getImageData(from: phAsset)
         
         // Compress image
         guard let compressedData = compressImage(imageData) else {
@@ -358,6 +402,7 @@ enum PhotosManagerError: LocalizedError {
     case invalidResponse
     case serverError(statusCode: Int)
     case scanInProgress
+    case requestCancelled
     
     var errorDescription: String? {
         switch self {
@@ -369,6 +414,8 @@ enum PhotosManagerError: LocalizedError {
             return "Server error: \(statusCode)"
         case .scanInProgress:
             return "A scan is already in progress"
+        case .requestCancelled:
+            return "Image request was cancelled"
         }
     }
 }

@@ -13,6 +13,8 @@ struct SearchView: View {
     @State private var results: [SearchResult] = []
     @State private var isSearching = false
     @State private var errorMessage: String?
+    @State private var searchStatus: String = ""
+    @State private var toolCalls: [String] = []
     
     var body: some View {
         NavigationView {
@@ -26,7 +28,7 @@ struct SearchView: View {
                         .textFieldStyle(.plain)
                         .onSubmit {
                             Task {
-                                await performSearch()
+                                await performStreamingSearch()
                             }
                         }
                     
@@ -34,6 +36,8 @@ struct SearchView: View {
                         Button(action: {
                             searchText = ""
                             results = []
+                            searchStatus = ""
+                            toolCalls = []
                         }) {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.gray)
@@ -50,17 +54,39 @@ struct SearchView: View {
                     SearchSuggestionsView()
                 }
                 
-                // Loading state
+                // Loading state with streaming status
                 if isSearching {
-                    ProgressView("Searching...")
-                        .frame(maxHeight: .infinity)
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        
+                        if !searchStatus.isEmpty {
+                            Text(searchStatus)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        if !toolCalls.isEmpty {
+                            HStack(spacing: 4) {
+                                ForEach(toolCalls, id: \.self) { tool in
+                                    Text(tool)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.blue.opacity(0.1))
+                                        .foregroundStyle(.blue)
+                                        .cornerRadius(4)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
                 }
                 
                 // Error state
                 else if let error = errorMessage {
                     ErrorStateView(message: error) {
                         Task {
-                            await performSearch()
+                            await performStreamingSearch()
                         }
                     }
                 }
@@ -88,17 +114,21 @@ struct SearchView: View {
         }
     }
     
-    private func performSearch() async {
+    /// Performs search using Server-Sent Events (SSE) streaming endpoint
+    private func performStreamingSearch() async {
         guard !searchText.isEmpty else { return }
         guard let tunnelURL = appState.tunnelURL,
               let url = URL(string: tunnelURL)?
-                .appendingPathComponent("api/search") else {
+                .appendingPathComponent("api/search/stream") else {
             errorMessage = "Invalid server URL"
             return
         }
         
         isSearching = true
         errorMessage = nil
+        searchStatus = "Starting search..."
+        toolCalls = []
+        results = []
         
         var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
         components?.queryItems = [
@@ -113,7 +143,10 @@ struct SearchView: View {
         }
         
         do {
-            let (data, response) = try await URLSession.shared.data(from: searchURL)
+            var request = URLRequest(url: searchURL)
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
                 errorMessage = "Invalid server response"
@@ -122,7 +155,6 @@ struct SearchView: View {
             }
             
             if httpResponse.statusCode == 404 {
-                // Search endpoint not implemented yet
                 errorMessage = "Search is coming soon!"
                 isSearching = false
                 return
@@ -134,14 +166,71 @@ struct SearchView: View {
                 return
             }
             
-            let searchResponse = try JSONDecoder().decode(SearchResponse.self, from: data)
-            results = searchResponse.results
+            // Process SSE stream
+            for try await line in bytes.lines {
+                // SSE format: "data: {...json...}"
+                guard line.hasPrefix("data: ") else { continue }
+                
+                let jsonString = String(line.dropFirst(6))
+                guard let data = jsonString.data(using: .utf8) else { continue }
+                
+                do {
+                    let event = try JSONDecoder().decode(StreamEvent.self, from: data)
+                    await processStreamEvent(event)
+                    
+                    // Exit loop on terminal events
+                    if event.type == "complete" || event.type == "error" {
+                        break
+                    }
+                } catch {
+                    print("Failed to decode stream event: \(error)")
+                }
+            }
             
         } catch {
             errorMessage = error.localizedDescription
         }
         
         isSearching = false
+        searchStatus = ""
+    }
+    
+    @MainActor
+    private func processStreamEvent(_ event: StreamEvent) {
+        switch event.type {
+        case "status":
+            searchStatus = event.message ?? "Processing..."
+            
+        case "tool-call":
+            if let toolName = event.toolName {
+                toolCalls.append(toolName)
+                searchStatus = "Using \(toolName)..."
+            }
+            
+        case "partial-results":
+            if let total = event.total {
+                searchStatus = "Found \(total) results so far..."
+            }
+            
+        case "text-delta":
+            // Agent is thinking - could show this in UI if desired
+            break
+            
+        case "complete":
+            if let eventResults = event.results {
+                results = eventResults
+            }
+            searchStatus = ""
+            toolCalls = []
+            
+        case "error":
+            errorMessage = event.error ?? "Search failed"
+            searchStatus = ""
+            toolCalls = []
+            
+        default:
+            break
+        }
     }
 }
 
@@ -314,6 +403,77 @@ struct SearchResponse: Codable {
     let success: Bool
     let results: [SearchResult]
     let total: Int
+}
+
+/// Server-Sent Events stream event from search agent
+struct StreamEvent: Codable {
+    let type: String
+    let message: String?
+    let toolName: String?
+    let args: AnyCodable?
+    let count: Int?
+    let total: Int?
+    let text: String?
+    let results: [SearchResult]?
+    let toolCalls: [String]?
+    let reasoning: String?
+    let executionTime: Int?
+    let error: String?
+    let timestamp: Int?
+}
+
+/// Helper for decoding arbitrary JSON values
+struct AnyCodable: Codable {
+    let value: Any
+    
+    init(_ value: Any) {
+        self.value = value
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        
+        if container.decodeNil() {
+            value = NSNull()
+        } else if let bool = try? container.decode(Bool.self) {
+            value = bool
+        } else if let int = try? container.decode(Int.self) {
+            value = int
+        } else if let double = try? container.decode(Double.self) {
+            value = double
+        } else if let string = try? container.decode(String.self) {
+            value = string
+        } else if let array = try? container.decode([AnyCodable].self) {
+            value = array.map { $0.value }
+        } else if let dict = try? container.decode([String: AnyCodable].self) {
+            value = dict.mapValues { $0.value }
+        } else {
+            value = NSNull()
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        
+        switch value {
+        case is NSNull:
+            try container.encodeNil()
+        case let bool as Bool:
+            try container.encode(bool)
+        case let int as Int:
+            try container.encode(int)
+        case let double as Double:
+            try container.encode(double)
+        case let string as String:
+            try container.encode(string)
+        case let array as [Any]:
+            try container.encode(array.map { AnyCodable($0) })
+        case let dict as [String: Any]:
+            try container.encode(dict.mapValues { AnyCodable($0) })
+        default:
+            try container.encodeNil()
+        }
+    }
 }
 
 #Preview {

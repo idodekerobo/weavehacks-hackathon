@@ -1,6 +1,6 @@
 # Photos-as-Intent Agent — Progress Tracker
 
-**Last Updated:** Feb 1, 2026 (Updated Milestone J & K for Browserbase-only implementation)
+**Last Updated:** Feb 1, 2026 (Migrated to OpenAI Agents SDK for search agent)
 
 ---
 
@@ -11,7 +11,7 @@
 | macOS App | ✅ Refactor Complete | Server + Tunnel + Photos + Image Upload (70% JPEG) + Models status check |
 | iOS App | ✅ Phase 4 Complete | Pairing + Photo Upload + Approvals + Search UI (backend pending) |
 | Node Server | ✅ Phase 2 Complete | SQLite + Bull queues + Ollama analysis + Weave + Approvals API |
-| Agentic Search | ✅ Milestone H-2 | Vercel AI SDK + tool calls + Weave tracing |
+| Agentic Search | ✅ Milestone H-2 | **OpenAI Agents SDK** + tool calls + Weave tracing |
 | Event Extraction | ✅ Milestone J | Ollama structured output with JSON schema enforcement |
 | Web Search | ✅ Milestone K | Browserbase Stagehand + verification + artifacts storage |
 | Admin Dashboard | 🟡 Partial | Bull Board provides queue monitoring |
@@ -59,7 +59,7 @@ This order prioritizes features that provide immediate testable value and builds
 
 | Priority | Milestone | Status | Description | Test After |
 |----------|-----------|--------|-------------|------------|
-| **#1** | **H-2** | 🟡 In Progress | **Agentic search with tool calls** (Vercel AI SDK + Weave) | Can I search "red flowers" and get results? |
+| **#1** | **H-2** | ✅ Complete | **Agentic search with tool calls** (OpenAI Agents SDK + Weave) | Can I search "red flowers" and get results? |
 | **#2** | **J** | ✅ Complete | **Event extraction from flyers** (Ollama structured output) | Does it extract event name, date, location? |
 | **#3** | **K** | ✅ Complete | **Web search for canonical event** (Browserbase automation) | Does it find the right event URL? |
 | **#4** | **M** | ✅ Complete | **Calendar integration** (Google Calendar API + OAuth 2.0) | Do events appear in Google Calendar? ✅ |
@@ -67,7 +67,7 @@ This order prioritizes features that provide immediate testable value and builds
 
 **🎉 At this point, you have a COMPLETE DEMO** (search + extract + calendar + approvals)
 
-**✅ MILESTONE J, K, M & N COMPLETE!** Next priority: Complete Agentic Search (H-2)
+**✅ ALL PHASE 3 MILESTONES COMPLETE!** Search agent migrated to OpenAI Agents SDK.
 
 ---
 
@@ -756,12 +756,30 @@ npm install ai @ai-sdk/openai
 ```
 
 **Key Implementation Notes:**
-1. Use Vercel AI SDK's `generateText()` with tools for agent loop
+1. Use Vercel AI SDK's `streamText()` with tools for streaming agent loop
 2. Keep max iterations to 5 to prevent infinite loops
 3. Cache embeddings in memory for faster similarity search (if needed)
 4. Return both results AND reasoning (show which tools were called)
 5. Handle empty results gracefully with helpful suggestions
 6. Log EVERYTHING to Weave for debugging and eval
+7. OpenTelemetry tracing via `experimental_telemetry` for Weave integration
+
+**Streaming Implementation (Feb 1, 2026):**
+- Consolidated `search-agent.ts` and `search-agent-streaming.ts` into single file
+- Uses `streamText()` from Vercel AI SDK for real-time updates
+- SSE endpoint `/api/search/stream` for progressive updates
+- Non-streaming `/api/search` wrapper for backward compatibility
+- iOS `SearchView.swift` updated to consume SSE stream
+- Real-time feedback: status, tool calls, partial results, text deltas, completion
+
+**ToolLoopAgent Migration (Feb 1, 2026):**
+- Upgraded from AI SDK 4.x to AI SDK 6.x
+- Migrated from `streamText()` to `ToolLoopAgent` class for agent orchestration
+- Replaced `ollama-ai-provider` with `ollama-ai-provider-v2` for AI SDK 6 compatibility
+- Agent instance is created once and reused (singleton pattern)
+- Uses `agent.stream()` for streaming and `agent.generate()` for non-streaming
+- Stop condition set to `stepCountIs(MAX_ITERATIONS)` (5 steps max)
+- OpenTelemetry telemetry enabled via `experimental_telemetry`
 
 **Success Criteria:**
 - ✅ Natural language queries work without exact keyword matching
@@ -772,9 +790,10 @@ npm install ai @ai-sdk/openai
 - ✅ Response time < 3 seconds for typical queries
 
 **Integration with iOS:**
-- iOS `SearchView.swift` already implemented (line 95 calls `/api/search`)
-- No client-side changes needed
-- Server returns `SearchResponse` matching existing interface
+- iOS `SearchView.swift` updated to use streaming SSE endpoint `/api/search/stream`
+- Shows real-time feedback: tool calls, partial result counts, agent reasoning
+- Progressive UI updates as agent processes query
+- Server returns `StreamEvent` objects via SSE, final results in `complete` event
 
 **Weave Visibility:**
 For judges/demos, each search will show:
@@ -1610,6 +1629,114 @@ docker run -d -p 6379:6379 redis
 15. **iCloud Photos required** - Assumed enabled for cross-device photo syncing
 16. **Standard Redis setup** - Uses ioredis client connecting to local Redis service
 17. **npm scripts for workers** - Server and workers run concurrently via package.json scripts
+18. **Smart server detection (Feb 1)** - Mac app reuses existing healthy servers, kills unhealthy ones before restart
+19. **Weave API key fix (Feb 1)** - Changed from WEAVE_API_KEY to WANDB_API_KEY (required by Weave library internally)
+20. **Concurrent uploads (Feb 1)** - Mac app uploads 5 photos in parallel (5x faster); server storage processes 5 concurrently
+
+---
+
+## 📝 Recent Changes
+
+### Feb 1, 2026 - Migrated Search Agent to OpenAI Agents SDK
+- **Migration:** Replaced Vercel AI SDK with OpenAI Agents SDK for search agent
+  - **Branch:** `feature/openai-agents-sdk-migration`
+  - **Model:** `gpt-4o-mini` for agent reasoning (cost-effective, excellent function calling)
+  - **Embeddings:** Still using Ollama `nomic-embed-text` (local, free)
+  - **Image Analysis:** Still using Ollama `qwen` (local, free)
+- **Architecture:** Hybrid approach
+  - OpenAI API for agent orchestration and reasoning
+  - Ollama for embeddings (stays local, no API costs)
+  - Weave tracing integration via `WeaveTracingProcessor`
+- **New Dependencies:**
+  - `@openai/agents` - OpenAI Agents SDK
+  - `openai` - OpenAI API client
+- **Removed Dependencies:**
+  - `ai` - Vercel AI SDK
+  - `@ai-sdk/openai-compatible`
+  - `ollama-ai-provider-v2`
+- **New Configuration:**
+  - `OPENAI_API_KEY` required in `.env`
+- **Files Changed:**
+  - `photo-agent-server/package.json` - Updated dependencies
+  - `photo-agent-server/src/services/search-agent.ts` - Full rewrite with OpenAI Agents SDK
+  - `photo-agent-server/src/services/search-tools.ts` - Migrated tools to JSON schema format
+  - `photo-agent-server/src/services/weave.ts` - Added `WeaveTracingProcessor` for SDK integration
+  - `photo-agent-server/.env.example` - Added `OPENAI_API_KEY`
+- **Benefits:**
+  - Better function calling reliability
+  - Faster response times (no local model tool calling issues)
+  - Native streaming support
+  - Better Weave tracing integration
+
+### Feb 1, 2026 - Enhanced Agent Debugging + Mistral Setup
+- **Added:** Comprehensive agent debugging with progress logging
+  - Progress updates every 3 seconds showing elapsed time
+  - `onStepFinish` callback to see agent's step-by-step decisions
+  - Logs prompt sizes and tool counts
+  - Clearer visibility into where agent might be stuck
+- **Changed:** Switched to Mistral for agentic search
+  - `AGENT_MODEL = 'mistral:7b'` (was qwen3-vl:8b)
+  - Mistral: 4.1GB, excellent function calling, edge-friendly
+  - Qwen3-VL: Still used for vision tasks (image analysis)
+  - **Architecture:** Specialized models for specialized tasks
+- **Re-enabled:** Agent mode (`USE_AGENT = true`)
+- **Expected Performance:** 3-6 seconds (vs 217ms direct, vs 25s timeout with Qwen)
+- **Files Changed:**
+  - `photo-agent-server/src/services/search-agent.ts` - Enhanced logging + Mistral config
+- **Documentation:**
+  - `docs/MISTRAL_SETUP.md` - Complete setup guide
+
+### Feb 1, 2026 - Added Direct Search Fallback (Bypass Agent)
+- **Problem:** Qwen3-VL model hanging on tool calling requests (25s timeout)
+- **Root Cause:** Vision model (qwen3-vl:8b) not optimized for text-only function calling
+- **Solution:** Added direct search mode that bypasses agent entirely
+  - Set `USE_AGENT = false` to use direct embedding search
+  - Completes in ~1-2 seconds instead of timing out
+  - Good enough for MVP/demo
+- **Alternative:** Switch to llama3.1:8b for better tool calling support
+- **Note:** M1 Pro hardware is NOT the issue - it's model compatibility
+- **Files Changed:**
+  - `photo-agent-server/src/services/search-agent.ts` - Added USE_AGENT flag and direct mode
+- **Documentation:**
+  - `docs/TIMEOUT_TROUBLESHOOTING.md` - Comprehensive debugging guide
+
+### Feb 1, 2026 - Enhanced Search Debugging & Timeout Handling
+- **Added:** Comprehensive logging throughout search pipeline for better debugging
+  - Logs Ollama request/response timing
+  - Logs tool calls with arguments preview
+  - Logs tool results with counts
+  - Logs deduplication and final result formatting
+  - Logs detailed error information with stack traces
+- **Added:** 25-second timeout on search endpoint (before iOS 30s timeout)
+  - Returns HTTP 504 with clear timeout error message
+  - Prevents iOS app from waiting indefinitely
+  - Includes execution time in all error responses
+- **Enhanced:** Weave tracing for search operations
+  - Logs model name, iteration count, tool calls used
+  - Tracks Ollama response time separately from total execution time
+  - Logs success/failure status and reasoning text
+  - Better visibility in Weave dashboard for debugging
+- **Added:** Streaming search endpoint (`/api/search/stream`)
+  - Uses Server-Sent Events (SSE) for progressive updates
+  - Streams tool calls, partial results, and reasoning in real-time
+  - Allows iOS app to show progress indicators
+  - Alternative to waiting for complete agent response
+- **Files Changed:**
+  - `photo-agent-server/src/routes/search.ts` - Added timeout and better logging
+  - `photo-agent-server/src/services/search-agent.ts` - Enhanced logging throughout
+  - `photo-agent-server/src/services/weave.ts` - Better tracing visibility
+  - `photo-agent-server/src/services/search-agent-streaming.ts` - New streaming implementation
+
+### Feb 1, 2026 - Fixed Photo Transfer Error Handling
+- **Fixed:** Missing error handling in `PhotosManager.swift` causing "data couldn't be read" errors
+- **Added:** Proper PHKit error checking in `getImageData` method
+- **Added:** `requestCancelled` error case to `PhotosManagerError` enum
+- **Changed:** `getImageData` now throws errors instead of returning optional
+- **Added:** Asset source type prefetching to avoid on-demand metadata fetching
+- **Added:** Error handling for iCloud assets and cancelled requests
+- **Result:** Photo upload now properly handles and reports PHKit errors instead of silent failures
+
+### Feb 1, 2026 - Fixed Mac App Server Detection + Weave API Key
 
 ---
 

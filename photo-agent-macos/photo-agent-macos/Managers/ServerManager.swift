@@ -40,15 +40,26 @@ class ServerManager {
                 throw ServerError.nodeNotInstalled
             }
             
-            // Check if port is available
-            if !isPortAvailable(appState.serverPort) {
-                throw ServerError.portInUse(appState.serverPort)
-            }
-            
             // Check if server path exists
             guard FileManager.default.fileExists(atPath: serverPath) else {
                 throw ServerError.serverPathNotFound(serverPath)
             }
+            
+            // Smart server detection: Check if server already exists and is healthy
+            print("🔍 Checking for existing server on port \(appState.serverPort)...")
+            if try await checkServerHealth() {
+                // Server exists and is healthy - reuse it!
+                print("✅ Found existing healthy server, reusing it")
+                appState.serverStatus = .running
+                startHealthChecks()
+                return
+            }
+            
+            // Server doesn't exist or is unhealthy
+            print("🔧 No healthy server found, starting fresh...")
+            
+            // Kill any existing processes on the port before starting
+            killProcessOnPort(appState.serverPort)
             
             // Spawn the Node server
             try await spawnServerProcess()
@@ -109,19 +120,49 @@ class ServerManager {
         return FileManager.default.fileExists(atPath: nodeBinaryPath)
     }
     
-    private func isPortAvailable(_ port: Int) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/lsof")
-        process.arguments = ["-i", ":\(port)"]
+    /// Kill any process listening on the specified port
+    private func killProcessOnPort(_ port: Int) {
+        print("🔪 Checking for processes on port \(port)...")
+        
+        // Use lsof to find process IDs using the port
+        let lsofProcess = Process()
+        lsofProcess.executableURL = URL(fileURLWithPath: "/usr/bin/lsof")
+        lsofProcess.arguments = ["-ti", ":\(port)"]
+        
+        let pipe = Pipe()
+        lsofProcess.standardOutput = pipe
         
         do {
-            try process.run()
-            process.waitUntilExit()
-            // If lsof finds something, port is in use (exit code 0)
-            return process.terminationStatus != 0
+            try lsofProcess.run()
+            lsofProcess.waitUntilExit()
+            
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8), !output.isEmpty {
+                // Parse PIDs from output (one per line)
+                let pids = output.split(separator: "\n").compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+                
+                if !pids.isEmpty {
+                    print("🔪 Found \(pids.count) process(es) on port \(port), terminating...")
+                    for pid in pids {
+                        print("   Killing PID: \(pid)")
+                        kill(pid, SIGTERM)
+                    }
+                    
+                    // Give processes time to terminate gracefully
+                    Thread.sleep(forTimeInterval: 1.0)
+                    
+                    // Force kill any remaining
+                    for pid in pids {
+                        kill(pid, SIGKILL)
+                    }
+                    
+                    print("✅ Cleaned up processes on port \(port)")
+                } else {
+                    print("✅ No processes found on port \(port)")
+                }
+            }
         } catch {
-            // If lsof fails, assume port is available
-            return true
+            print("⚠️ Failed to check/kill processes on port \(port): \(error.localizedDescription)")
         }
     }
     
@@ -304,7 +345,6 @@ class ServerManager {
 enum ServerError: Error {
     case nodeNotInstalled
     case npmNotFound(String)
-    case portInUse(Int)
     case serverPathNotFound(String)
     case healthCheckTimeout
     case startupCancelled
@@ -316,8 +356,6 @@ enum ServerError: Error {
             return "Node.js is not installed. Please install from nodejs.org"
         case .npmNotFound(let path):
             return "npm not found at: \(path)"
-        case .portInUse(let port):
-            return "Port \(port) is already in use"
         case .serverPathNotFound(let path):
             return "Server not found at: \(path)"
         case .healthCheckTimeout:
