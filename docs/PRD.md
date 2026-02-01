@@ -57,7 +57,7 @@ The product recognizes these patterns, enriches them on the web, and executes th
   - **Location** (from EXIF / Photos metadata when available)
   - **Text via OCR** (from local vision models)
   - **Image embedding** (for similarity search / clustering / dedupe)
-- **Redis**: queues, state machine, dedupe, caching (optional: vector memory if Redis Stack is used).
+- **Redis**: queues, state machine, dedupe, caching. Uses standard `ioredis` client connecting to local Redis service (brew services start redis). Workers run in separate process via npm scripts.
 - **Browserbase**: remote browser sessions for event discovery, verification, and RSVP form completion.
 - **Weave**: observability and tracing for each run (image → intent → web steps → approval → outcome).
 
@@ -70,10 +70,11 @@ Nice-to-have additions:
 Every image becomes an “intent document” that the system can search, cluster, and act on. At minimum it contains:
 - Image reference (photo library id and/or hashed id)
 - **Timestamp** (date taken)
-- **Location** (if available)
+- **Location** (latitude, longitude, altitude - if available)
+- **Metadata** (filename, media type, is favorited)
 - **OCR text** (if any)
 - **Embedding** (for similarity search and dedupe)
-- Detected intent labels (e.g., “event flyer”) + confidence
+- Detected intent labels (e.g., "event flyer") + confidence
 
 ---
 
@@ -84,13 +85,15 @@ The macOS app is the user’s primary entry point. It must feel like a **local, 
 
 ### First-run setup (happy path)
 1. **Welcome + privacy promise**
-   - Clear statement: “Your Photos are analyzed locally on your Mac. Web actions require approval.”
+   - Clear statement: "Your Photos are analyzed locally on your Mac. Web actions require approval."
+   - **Permissions request shown immediately on first launch**
 2. **Permissions**
-   - Photos library access (read).
-   - Notifications.
+   - Photos library access (read) - requested on first launch
+   - Notifications
 3. **Start local agent**
-   - One-click: “Start Agent”
-   - Automatically connects to the user’s Photos library and begins analyzing **existing images** in the background.
+   - One-click: "Start Agent"
+   - Automatically connects to the user's Photos library and begins analyzing **existing images** in the background.
+   - **Default: scans last 1000 photos** (configurable in settings from 100 to 10,000 or "All Photos")
 4. **Tunnel setup**
    - One-click: “Enable iPhone Access”
    - Creates a secure tunnel endpoint (ngrok or Cloudflare Tunnel) so the iOS app can talk to the local server when needed.
@@ -104,9 +107,9 @@ Designed for clarity and control:
   - Tunnel: Online/Offline + endpoint
   - Queue: \(N\) pending / \(M\) running / \(K\) waiting for approval
 - **Scan controls**
-  - “Analyze last 30 days”
-  - “Analyze all photos” (with time estimate)
-  - “Pause analysis”
+  - "Analyze last 1000 photos" (default)
+  - Configurable: 100 / 500 / 1000 / 5000 / 10,000 / "All Photos"
+  - "Pause analysis"
 - **Approvals inbox**
   - List of pending “actions” that require HITL approval:
     - “RSVP to Event X?”
@@ -146,9 +149,27 @@ The iOS app is the “on-the-go” way to:
   - A feed of detected intents and outcomes: “RSVP confirmed”, “calendar added”, “couldn’t find canonical event”.
 
 ### iOS processing stance
-- iOS should **upload new photos taken post-onboarding** to the local API over the tunnel endpoint.
-- The Mac is the **analysis engine**: local models on Mac Silicon handle OCR/embedding/extraction and queue downstream enrichment/actions.
-- Heavy backlog scanning and long-running enrichment stays on Mac.
+- iOS should **upload new photos taken post-onboarding** (compressed to 70% JPEG quality) to the Node server API over the tunnel endpoint.
+- The **Node server is the analysis engine**: handles all Ollama calls for OCR/embedding/extraction and coordinates job queues.
+- Heavy backlog scanning is initiated by macOS, but both iOS and macOS upload images to the same Node server pipeline.
+- **Assumes iCloud Photos is enabled**: Images captured on iOS should sync to macOS Photos library via iCloud for consistency.
+
+### Photo processing architecture
+- **Centralized analysis**: ✅ All image analysis happens in the Node server via Ollama HTTP API (completed Feb 1, 2026)
+- **Hybrid storage approach**:
+  - **SQLite**: ✅ Persistent storage for photo metadata, embeddings, and intent documents (survives restarts)
+  - **Redis**: ✅ Ephemeral storage for job queues (Bull), state machines, and dedupe caches (operational state)
+- **Image upload with compression**: ✅ Photo image data is uploaded to Node server (compressed to 70% JPEG quality)
+- **Processing pipeline**: ✅ Implemented
+  1. macOS/iOS PhotoKit → extract metadata + image data (compressed)
+  2. Upload to Node server API (POST /api/assets/upload)
+  3. Node server → Bull queue → Ollama analysis (OCR, summary, embeddings)
+  4. Store results in SQLite
+  5. Queue downstream jobs (intent routing, web enrichment) in Redis/Bull
+- **Server as sync point**: Both macOS and iOS apps query the Node server API, which reads from SQLite (single source of truth)
+- **Real-time updates**: WebSocket/SSE connection for approval notifications and action status updates (planned)
+- **Image deduplication**: ✅ SHA-256 content hash prevents duplicate processing across devices
+- **Scalability**: SQLite easily handles 10K-100K+ photos with 512-dim embeddings (~30-300MB total)
 
 ---
 
@@ -335,6 +356,18 @@ Redis should power the agent as a stateful system:
 - **State machine**: runs waiting on HITL, retries, backoffs
 - **Dedupe**: prevent double-RSVP or duplicate calendar entries
 - **Caching**: canonical event page results
+
+**Implementation:** 
+- Uses standard `ioredis` client library (industry standard)
+- Connects to local Redis instance (localhost:6379)
+- Workers run in separate process via npm scripts
+- `npm run dev` starts both server and workers concurrently using `concurrently`
+- Setup: `brew services start redis` or Docker: `docker run -d -p 6379:6379 redis`
+
+Optional "bonus Redis" (if Redis Stack):
+- vector memory for "have I seen this flyer/event before?"
+
+**Implementation:** Redis is **embedded within the Node server** using the `redis-server` npm package. It auto-starts when the server starts and auto-stops when the server stops. No separate installation or service management required - just start the Node server and Redis is running.
 
 Optional “bonus Redis” (if Redis Stack):
 - vector memory for “have I seen this flyer/event before?”

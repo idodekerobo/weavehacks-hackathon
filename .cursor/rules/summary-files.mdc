@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+do not create summary files for every change. only update the existing files - PRD.md, PROGRESS.md, CHANGELOG.md.

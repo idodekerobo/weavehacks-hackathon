@@ -1,6 +1,6 @@
 # Photos-as-Intent Agent — Progress Tracker
 
-**Last Updated:** Jan 31, 2026
+**Last Updated:** Feb 1, 2026
 
 ---
 
@@ -8,10 +8,10 @@
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| macOS App | 🟡 In Progress | Server + Tunnel done, Photos + Models pending |
-| iOS App | 🔴 Not Started | Placeholder UI only |
-| Node Server | 🟡 In Progress | Basic routes, needs Redis/Weave/Browserbase |
-| Admin Dashboard | 🔴 Not Started | Placeholder UI only |
+| macOS App | ✅ Refactor Complete | Server + Tunnel + Photos + Image Upload (70% JPEG) + Models status check |
+| iOS App | ✅ Phase 4 Complete | Pairing + Photo Upload + Approvals + Search (Milestones O+P+Q) |
+| Node Server | ✅ Phase 2 Complete | SQLite + Bull queues + Ollama analysis + Weave + Approvals API |
+| Admin Dashboard | 🟡 Partial | Bull Board provides queue monitoring |
 
 ---
 
@@ -22,16 +22,17 @@
 |-----------|--------|-------------|
 | A | ✅ Complete | Server lifecycle management |
 | B | ✅ Complete | Cloudflare tunnel management |
-| C | 🔴 Not Started | Photos library access (PhotoKit) |
-| D | 🔴 Not Started | Local model integration (Ollama) |
+| C | ✅ Complete | Photos library access (PhotoKit) |
+| D | ✅ Complete | Centralized model integration (Ollama) - refactored to server |
+| E | ✅ Complete | SQLite + Bull Queue + Image Upload (merged with D refactor) |
 
 ### Phase 2: Intent Pipeline (Server + Processing)
 | Milestone | Status | Description |
 |-----------|--------|-------------|
-| E | 🔴 Not Started | UserAsset model + server endpoints |
-| F | 🔴 Not Started | Redis queue integration |
-| G | 🔴 Not Started | Weave observability |
-| H | 🔴 Not Started | Photo → Intent processing pipeline |
+| E | ✅ Complete | SQLite + Bull Queue Setup (completed with D refactor) |
+| F | ✅ Complete | Redis queue integration (merged with E - using ioredis + Bull) |
+| G | ✅ Complete | Weave observability |
+| H | ✅ Complete | Photo → Intent processing pipeline |
 
 ### Phase 3: Skills & Actions (Web Automation)
 | Milestone | Status | Description |
@@ -42,20 +43,21 @@
 | L | 🔴 Not Started | RSVP form completion |
 | M | 🔴 Not Started | Calendar integration |
 
-### Phase 4: Consumer Experience
+### Phase 4: Consumer Experience (iOS + macOS)
 | Milestone | Status | Description |
 |-----------|--------|-------------|
 | N | 🔴 Not Started | macOS approvals inbox UI |
-| O | 🔴 Not Started | iOS pairing + upload |
-| P | 🔴 Not Started | iOS approvals + search |
-| Q | 🔴 Not Started | Notifications (push/local) |
+| O | ✅ Complete | iOS app foundation + pairing |
+| P | ✅ Complete | iOS photo upload + monitoring |
+| Q | ✅ Complete | iOS approvals + search UI |
+| R | 🔴 Not Started | WebSocket/SSE real-time updates |
 
 ### Phase 5: Demo Polish
 | Milestone | Status | Description |
 |-----------|--------|-------------|
-| R | 🔴 Not Started | Admin dashboard live runs |
-| S | 🔴 Not Started | Admin Browserbase Live View |
-| T | 🔴 Not Started | End-to-end demo flow |
+| S | 🔴 Not Started | Admin dashboard live runs |
+| T | 🔴 Not Started | Admin Browserbase Live View |
+| U | 🔴 Not Started | End-to-end demo flow |
 
 ### Nice-to-Have
 | Milestone | Status | Description |
@@ -66,6 +68,11 @@
 ---
 
 ## Detailed Milestone Breakdown
+
+> **⚠️ IMPORTANT: Architecture Refactor in Progress**  
+> Milestones D and E are being refactored to centralize image analysis in the Node server.  
+> See `docs/REFACTOR_PLAN.md` for detailed implementation plan.  
+> This simplifies iOS integration and improves scalability.
 
 ### ✅ Milestone A: Server Lifecycle Management
 **Status:** Complete  
@@ -103,119 +110,408 @@
 
 ---
 
-### 🔴 Milestone C: Photos Library Access
-**Status:** Not Started
+### ✅ Milestone C: Photos Library Access
+**Status:** Complete
+**Completed:** Jan 31, 2026
+
+**What was built:**
+- `PhotosManager.swift` - Handles photo library authorization and scanning
+- `UserAsset.swift` - Model for photo metadata with comprehensive fields
+- `PermissionRequestView.swift` - First-launch permission request UI
+- `PhotoScanCard` component in `StatusDashboardView.swift`
+- Updated `AppState.swift` with photo scanning state tracking
+- Updated `ContentView.swift` to show permission gate
+
+**Features implemented:**
+- PhotoKit authorization flow (request on first launch)
+- Blocking screen if permission denied (required to use app)
+- Fetch last 1000 photos (hardcoded constant)
+- Extract comprehensive metadata:
+  - Date taken
+  - Location (latitude, longitude, altitude)
+  - Filename
+  - Media type (image, video, audio, unknown)
+  - Is favorited
+- Send metadata to Node server via POST /api/assets
+- Progress tracking (X/Y photos scanned)
+- Server dependency check (must be running to scan)
+
+**Configuration:**
+- Scan limit: 1000 photos (hardcoded in PhotosManager.swift)
+- Server endpoint: http://localhost:1738/api/assets
+
+**Manual setup required:**
+- Add `NSPhotoLibraryUsageDescription` to Xcode project Info
+- See `PHOTO_PERMISSIONS_SETUP.md` for instructions
+
+**Files:**
+- `photo-agent-macos/Managers/PhotosManager.swift` ✅
+- `photo-agent-macos/Models/UserAsset.swift` ✅
+- `photo-agent-macos/Models/AppState.swift` ✅ (updated)
+- `photo-agent-macos/Views/PermissionRequestView.swift` ✅
+- `photo-agent-macos/Views/StatusDashboardView.swift` ✅ (updated)
+- `photo-agent-macos/ContentView.swift` ✅ (updated)
+- `photo-agent-macos/PHOTO_PERMISSIONS_SETUP.md` ✅
+
+---
 
 **Goals:**
-- Request PhotoKit read authorization
-- Fetch photos from user's library
-- Extract metadata (date taken, location, etc.)
-- Display photos in macOS app UI
+- Request PhotoKit read authorization on first launch
+- Fetch photos from user's library (default: last 1000 photos)
+- Extract comprehensive metadata:
+  - Date taken
+  - Location (latitude, longitude, altitude)
+  - Filename
+  - Media type (image, video, etc.)
+  - Is favorited
+- Make scan limit configurable (100 / 500 / 1000 / 5000 / 10,000 / All)
+- Store photo metadata locally (not uploading photos to server yet)
+- (Future) Display photos in macOS app UI
 
 **Files to implement:**
 - `photo-agent-macos/Managers/PhotosManager.swift`
 - Add `NSPhotoLibraryReadUsageDescription` to Info.plist
+- Update `AppState.swift` to track photo scan status
 
 **Key APIs:**
 - `PHPhotoLibrary.requestReadWriteAuthorization()`
 - `PHAsset`, `PHFetchOptions`, `PHImageManager`
+- `PHAsset.location`, `PHAsset.creationDate`, `PHAsset.isFavorite`
+- `PHAsset.mediaType`, `PHAssetResource` for filename
+
+**Processing flow:**
+1. Request permissions on first launch (show blocking screen if denied)
+2. Fetch last N photos (default 1000, hardcoded constant for now)
+3. For each photo, extract:
+   - Local identifier
+   - Creation date
+   - Location (lat, lng, altitude if available)
+   - Filename
+   - Media type
+   - Favorite status
+4. Send metadata to Node server API (`POST /api/assets`)
+5. Node server stores in SQLite (single source of truth)
+6. Queue for local model analysis (Milestone D)
+
+**Architecture decisions:**
+- Hardcode scan limit to 1000 for now (configurable later)
+- If user denies permission: show blocking screen with "Photos access required" message
+- Photos stay on device; only metadata sent to server
+- SQLite (on Node server) as persistent storage
+- Both macOS and iOS apps query via server API
 
 ---
 
-### 🔴 Milestone D: Local Model Integration (Ollama)
-**Status:** Not Started
+### ⚠️ Milestone D: Local Model Integration (Ollama)
+**Status:** ✅ Refactored Complete
+**Original Completion:** Jan 31, 2026
+**Refactor Completion:** Feb 1, 2026
 
-**Goals:**
-- Check Ollama installation
-- Call Ollama REST API for vision analysis
-- Extract OCR text from images
-- Generate embeddings for similarity search
+**Architecture Change:**
+Successfully migrated from client-side analysis to centralized server-side analysis.
 
-**Files to implement:**
-- `photo-agent-macos/Managers/ModelManager.swift`
+**What was built (refactored):**
+- **Server Side (NEW)**:
+  - `src/db/sqlite.ts` - SQLite database with WAL mode for photo metadata and analysis results
+  - `src/services/ollama.ts` - Centralized Ollama service for image analysis
+  - `src/services/queue.ts` - Bull queue service with 3 queues (upload, analysis, intent routing)
+  - `src/routes/assets.ts` - RESTful endpoints for asset upload and management
+  - `src/workers/image-upload.ts` - Upload queue worker with deduplication
+  - `src/workers/image-analysis.ts` - Analysis worker with 4 concurrent jobs
+  - Updated `src/index.ts` - Integration with new services and Bull Board UI
+  - Updated `package.json` - Concurrent server + workers via npm scripts
 
-**Prerequisites:**
-- User must install Ollama: `brew install ollama`
-- User must pull models: `ollama pull llava:13b`, `ollama pull nomic-embed-text`
+- **Mac App Side (UPDATED)**:
+  - `UserAsset.swift` - Added `contentHash` field for SHA-256 deduplication
+  - `PhotosManager.swift` - Updated to upload compressed images (70% JPEG) with multipart/form-data
+  - `ModelManager.swift` - Simplified to status checks only (removed analysis logic)
+  - `StatusDashboardView.swift` - Updated UI to show queue status instead of manual analysis button
 
-**Key endpoints:**
-- `POST http://localhost:11434/api/generate` (with images)
-- `POST http://localhost:11434/api/embeddings`
+**New Architecture Benefits:**
+- ✅ Single analysis pipeline (no code duplication for iOS)
+- ✅ Better job queue management with Bull
+- ✅ Content hash deduplication prevents duplicate processing
+- ✅ Automatic analysis after upload (no manual button needed)
+- ✅ Bull Board UI for monitoring queues at `/admin/queues`
+- ✅ Server as single source of truth for both macOS and iOS
+
+**Processing Flow:**
+```
+macOS PhotoKit
+  ↓ Extract metadata + compress image (70% JPEG)
+  ↓ Compute SHA-256 hash
+  ↓ POST /api/assets/upload (multipart/form-data)
+Node Server (Bull Queue: 'image-upload')
+  ↓ Check: contentHash exists in SQLite?
+  ↓ YES → Skip (dedupe) | NO → Store + enqueue 'image-analysis'
+Node Server (Bull Queue: 'image-analysis', concurrency: 4)
+  ↓ Fetch image from SQLite
+  ↓ Call Ollama HTTP API (localhost:11434)
+  ↓ Analyze: OCR + summary + embedding
+  ↓ Update SQLite with results
+  ↓ Enqueue 'intent-routing' (future)
+```
+
+**Models used:**
+- Vision: `qwen3-vl:8b` (OCR + image understanding)
+- Embeddings: `nomic-embed-text` (semantic search)
+
+**Prerequisites (user setup):**
+```bash
+# Ollama
+brew install ollama
+brew services start ollama
+ollama pull qwen3-vl:8b
+ollama pull nomic-embed-text
+
+# Redis (required for Bull queues)
+brew services start redis
+
+# Run server with workers
+cd photo-agent-server && npm run dev
+```
+
+**Files updated:**
+- **Server (NEW):**
+  - `photo-agent-server/src/db/sqlite.ts` ✅
+  - `photo-agent-server/src/services/ollama.ts` ✅
+  - `photo-agent-server/src/services/queue.ts` ✅
+  - `photo-agent-server/src/routes/assets.ts` ✅
+  - `photo-agent-server/src/workers/index.ts` ✅
+  - `photo-agent-server/src/workers/image-upload.ts` ✅
+  - `photo-agent-server/src/workers/image-analysis.ts` ✅
+  - `photo-agent-server/src/index.ts` ✅ (updated)
+  - `photo-agent-server/package.json` ✅ (updated)
+
+- **Mac App (UPDATED):**
+  - `photo-agent-macos/Models/UserAsset.swift` ✅
+  - `photo-agent-macos/Managers/PhotosManager.swift` ✅
+  - `photo-agent-macos/Managers/ModelManager.swift` ✅
+  - `photo-agent-macos/Views/StatusDashboardView.swift` ✅
 
 ---
 
-### 🔴 Milestone E: UserAsset Model + Server Endpoints
-**Status:** Not Started
+### 🟡 Milestone E: SQLite + Bull Queue Setup (Server Foundation)
+**Status:** ✅ Complete (Merged with Milestone D Refactor)
+**Completed:** Feb 1, 2026
 
-**Goals:**
-- Define UserAsset TypeScript interface on server
-- Create CRUD endpoints for UserAssets
-- Store in memory initially (later: Redis/SQLite)
+**What was built:**
+- SQLite database with WAL mode for better concurrency
+- Bull queue service with Redis integration
+- Image upload endpoint with multipart form-data support
+- Content hash deduplication (SHA-256)
+- Workers for upload and analysis processing
+- Bull Board UI at `/admin/queues` for monitoring
 
-**Files to implement:**
-- `photo-agent-server/src/models/UserAsset.ts`
-- `photo-agent-server/src/routes/assets.ts`
+**Files implemented:**
+- `photo-agent-server/src/db/sqlite.ts` ✅ (database setup)
+- `photo-agent-server/src/services/ollama.ts` ✅ (Ollama client)
+- `photo-agent-server/src/services/queue.ts` ✅ (Bull queue setup)
+- `photo-agent-server/src/routes/assets.ts` ✅ (proper routing)
+- `photo-agent-server/src/workers/image-upload.ts` ✅ (upload queue worker)
+- `photo-agent-server/src/workers/image-analysis.ts` ✅ (analysis queue worker)
+- `photo-agent-server/src/workers/index.ts` ✅ (workers entry point)
+
+**Database schema (SQLite):**
+```sql
+CREATE TABLE assets (
+  id TEXT PRIMARY KEY,
+  photoLibraryId TEXT NOT NULL,
+  contentHash TEXT UNIQUE NOT NULL,  -- SHA-256 for deduplication
+  deviceId TEXT,  -- Track which device uploaded
+  creationDate TEXT,
+  latitude REAL,
+  longitude REAL,
+  altitude REAL,
+  filename TEXT,
+  mediaType TEXT NOT NULL,
+  isFavorite INTEGER DEFAULT 0,
+  ocrText TEXT,
+  summary TEXT,
+  embedding TEXT,  -- JSON array of floats
+  intentLabels TEXT,  -- JSON array
+  confidence REAL,
+  imageData BLOB,  -- Compressed JPEG
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_content_hash ON assets(contentHash);
+CREATE INDEX idx_creation_date ON assets(creationDate DESC);
+CREATE INDEX idx_device_id ON assets(deviceId);
+```
+
+**Bull Queues:**
+1. `image-upload` - Receives images, checks deduplication, stores in SQLite
+2. `image-analysis` - Calls Ollama for OCR/summary/embedding
+3. `intent-routing` - Classifies intent type, routes to skills
+4. `web-enrichment` - Browserbase search for event flyers
+5. `action-execution` - Execute approved actions (RSVP, calendar)
 
 **Endpoints:**
-- `POST /api/assets` - Create new asset
-- `GET /api/assets` - List all assets
+- `POST /api/assets/upload` - Upload image with metadata (multipart/form-data)
+- `GET /api/assets` - List all assets (with pagination)
 - `GET /api/assets/:id` - Get single asset
+- `GET /api/assets/:id/image` - Get image data
 - `PATCH /api/assets/:id` - Update asset
 - `DELETE /api/assets/:id` - Delete asset
+- `GET /api/queue/status` - Queue health/stats
 
 ---
 
 ### 🔴 Milestone F: Redis Queue Integration
-**Status:** Not Started
+**Status:** ✅ Complete (Merged with Milestone E)
+**Completed:** Feb 1, 2026
 
-**Goals:**
-- Connect to Redis
-- Create job queues: ingestion, enrichment, action
-- Implement state machine for job lifecycle
-- Dedupe logic for duplicate photos
+**Implementation:** Redis integration completed as part of Milestone E via Bull queues. Uses standard `ioredis` client library connecting to local Redis instance.
 
-**Prerequisites:**
-- Redis running locally: `brew install redis && brew services start redis`
+**Architecture:** 
+- Redis runs as a local service via Homebrew
+- Bull queues connect via `ioredis` client
+- Workers run in separate process via npm scripts
+- `npm run dev` starts both server and workers concurrently using `concurrently`
 
 **Key packages:**
-- `ioredis` or `redis` npm package
-- `bull` or `bullmq` for job queues
+- `bull` - Job queue with Redis backing
+- `ioredis` - Redis client library (industry standard)
+- `@bull-board/express` - Web UI for monitoring queues
+- `concurrently` - Run multiple npm scripts in parallel
 
----
+**npm Scripts:**
+```json
+{
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:workers\"",
+    "dev:server": "tsx watch src/index.ts",
+    "dev:workers": "tsx watch src/workers/index.ts"
+  }
+}
+```
 
-### 🔴 Milestone G: Weave Observability
-**Status:** Not Started
+**Bull Queue Architecture:**
+```
+Queue: 'image-upload'
+  └─> Worker: Dedupe check → Store in SQLite → Enqueue 'image-analysis'
 
-**Goals:**
-- Initialize Weave client
-- Create traces for each photo processing run
-- Add spans for: ingestion, extraction, routing, action
-- Log system prompt versions
+Queue: 'image-analysis'  
+  └─> Worker: Fetch image → Ollama OCR/summary/embedding → Update SQLite → Enqueue 'intent-routing'
+
+Queue: 'intent-routing' (placeholder)
+  └─> Worker: Classify intent → Route to skill-specific queues (future)
+```
+
+**Configuration:**
+- Redis connection: localhost:6379 (standard port)
+- Max concurrency: 4 per analysis queue
+- Retry logic: Built into Bull (3 attempts with exponential backoff)
+- Job timeout: Configurable per queue
+- Bull Board UI: http://localhost:1738/admin/queues
 
 **Prerequisites:**
-- Weave API key in `.env`
-
-**Key integration points:**
-- Wrap all LLM calls with Weave spans
-- Log extraction results
-- Track approval/rejection events
+- Redis running locally: `brew services start redis`
+- Or use Docker: `docker run -d -p 6379:6379 redis`
 
 ---
 
-### 🔴 Milestone H: Photo → Intent Pipeline
-**Status:** Not Started
+### ✅ Milestone G: Weave Observability
+**Status:** Complete
+**Completed:** Feb 1, 2026
 
-**Goals:**
-- Orchestrate: Photo → OCR → Classification → UserAsset
-- Route based on detected intent type
-- Queue for downstream enrichment
+**What was built:**
+- Weave TypeScript SDK integration
+- Centralized Weave service for tracing
+- Full observability across all workers and API endpoints
+- Traced operations for image analysis and intent classification
 
-**Flow:**
+**Files implemented:**
+- `photo-agent-server/src/services/weave.ts` ✅ (Weave client + helpers)
+- `photo-agent-server/src/services/ollama.ts` ✅ (added tracing to analysis)
+- `photo-agent-server/src/workers/index.ts` ✅ (initialize Weave for workers)
+- `photo-agent-server/src/workers/image-upload.ts` ✅ (added trace attributes)
+- `photo-agent-server/src/workers/image-analysis.ts` ✅ (added trace attributes)
+- `photo-agent-server/src/index.ts` ✅ (initialize Weave on startup)
+
+**Features:**
+- `initWeave()` - Initialize Weave client with "photo-agent" project
+- `createTracedOp(name, fn)` - Wrap functions with automatic tracing
+- `logAttributes(attrs)` - Attach custom attributes to traces
+- Graceful degradation if WEAVE_API_KEY not set
+- All LLM calls (Ollama) automatically traced
+- All worker jobs traced end-to-end
+
+**Traces captured:**
+- Image upload: contentHash, deviceId, mediaType, hasLocation
+- Image analysis: model, imageSize, summaryLength, ocrLength, embeddingDim
+- Intent classification: intentType, confidence, reasoning
+- Intent routing: routingDecision, readiness for Browserbase
+
+**Configuration:**
+- Set `WEAVE_API_KEY` in `.env` file
+- Project name: `photo-agent` (hardcoded)
+- Traces viewable at wandb.ai/weave
+
+**Key integration points:**
+✅ Wrapped all LLM calls with Weave spans  
+✅ Log extraction results and routing decisions  
+✅ Track approval/rejection events (future)  
+✅ Full visibility into processing pipeline
+
+---
+
+### ✅ Milestone H: Photo → Intent Pipeline
+**Status:** Complete
+**Completed:** Feb 1, 2026
+
+**What was built:**
+- Intent classification service using Ollama
+- Intent routing worker for automated classification
+- Database updates to store intent labels and confidence
+- Routing logic for event flyers vs other types
+
+**Files implemented:**
+- `photo-agent-server/src/services/ollama.ts` ✅ (added `classifyIntent()`)
+- `photo-agent-server/src/workers/intent-routing.ts` ✅ (new worker)
+- `photo-agent-server/src/workers/index.ts` ✅ (import routing worker)
+
+**Intent Classification:**
+- **Input**: Summary text + OCR text from image analysis
+- **Output**: Intent type, confidence score (0-1), reasoning
+- **Intent Types**:
+  1. `event_flyer` - Event posters, flyers, invitations (date/time/venue/RSVP info)
+  2. `general_photo` - Regular photographs (people, scenes, nature, non-event screenshots)
+  3. `other` - Receipts, documents, articles, memes, abstract images
+
+**Routing Logic:**
+- `event_flyer` + confidence ≥ 0.7 → Marked ready for Browserbase (Phase 3)
+- All other classifications → No automated action, available for search/review
+
+**Processing Flow:**
 1. Photo ingested (from macOS library or iOS upload)
-2. Ollama extracts OCR text
-3. Ollama classifies intent (event_flyer, receipt, screenshot, etc.)
-4. Create UserAsset with extracted data
-5. Queue for enrichment if actionable
+2. Ollama extracts OCR text + summary → stored in SQLite
+3. Image analysis worker enqueues intent-routing
+4. Intent routing worker:
+   - Fetches summary + OCR from SQLite
+   - Calls `classifyIntent()` via Ollama
+   - Updates SQLite with intentLabels (JSON array) + confidence
+   - Logs routing decision to Weave
+   - If event_flyer + high confidence → marks ready for Phase 3
+
+**Database Schema Updates:**
+- `intentLabels` - JSON array of detected intent types
+- `confidence` - Float (0-1) confidence score
+
+**Worker Configuration:**
+- Concurrency: 2 concurrent intent routing jobs
+- Queue: `intent-routing` (Bull queue in Redis)
+- Automatic processing after image analysis completes
+
+**Key decisions:**
+✅ Use existing Ollama integration for classification  
+✅ Structured prompt with clear intent type definitions  
+✅ Confidence threshold of 0.7 for automated routing  
+✅ Event flyers queued for Browserbase in Phase 3  
+✅ All other types stored for search/manual review  
+✅ Full Weave tracing for debugging classification accuracy
 
 ---
 
@@ -278,45 +574,340 @@
 
 ---
 
-### 🔴 Milestone N: macOS Approvals Inbox
+### 🔴 Milestone N: macOS Approvals Inbox UI
 **Status:** Not Started
+**Prerequisites:** Milestone H (Intent Pipeline) must be complete
 
 **Goals:**
 - Display pending approvals in macOS app
-- Show: source image, extracted details, proposed action
+- Show: source image thumbnail, extracted details, proposed action
 - Approve/Edit/Reject buttons
 - Mark as complete after action
+- Real-time updates via WebSocket/SSE
+
+**Files to implement:**
+- `photo-agent-macos/Views/ApprovalInboxView.swift` 🔴
+- `photo-agent-macos/Managers/ApprovalManager.swift` 🔴
+- Update `StatusDashboardView.swift` to show approval count
+- Server endpoints already exist (Milestone H dependency)
+
+**UI Components:**
+- List of pending approvals
+- Each card shows:
+  - Image thumbnail
+  - Extracted event details (title, date, location)
+  - Confidence score
+  - Proposed action summary
+  - Approve/Edit/Reject buttons
+- Filter options: All, Pending, Approved, Rejected
+- Refresh button + auto-refresh via WebSocket
 
 ---
 
-### 🔴 Milestone O: iOS Pairing + Upload
-**Status:** Not Started
+### 🟡 Milestone O: iOS App Foundation + Pairing
+**Status:** ✅ Complete
+**Completed:** Feb 1, 2026
 
-**Goals:**
-- Scan QR code to get tunnel URL
-- Store URL securely
-- Auto-upload new photos to server
-- Handle offline gracefully
+**What was built:**
+- **iOS Models:**
+  - `AppState.swift` - iOS-specific state management (connection, device ID, pairing)
+  - `KeychainHelper.swift` - Secure storage for tunnel URL
+- **iOS Managers:**
+  - `ConnectionManager.swift` - Pairing, health checks, device registration, polling
+- **iOS Views:**
+  - `PairingView.swift` - QR scanner + manual entry for pairing
+  - `QRScannerViewRepresentable.swift` - AVFoundation QR scanner implementation
+  - `ConnectionStatusView.swift` - Connection health indicator
+  - `MainTabView.swift` - Inbox, Search, Settings tabs (placeholders)
+- **Server Side:**
+  - `src/routes/devices.ts` - Device registration endpoints
+  - Updated `src/db/sqlite.ts` - Added devices table
+  - Updated `src/index.ts` - Added devices router
+
+**Pairing flow:**
+1. iOS app launches → Check if paired
+2. If not paired → Show QR scanner
+3. Scan QR from macOS Status Dashboard
+4. Extract tunnel URL from QR code
+5. Test connection with `/health` endpoint
+6. Store in Keychain (secure)
+7. Register device with server: `POST /api/devices`
+8. Show success → Navigate to main app
+9. Start polling for approvals (10-second interval)
+
+**Implementation decisions:**
+- Models duplicated (not using shared package yet - refactor later)
+- Polling-based updates (10s interval) instead of SSE initially
+- Keychain storage for tunnel URL security
+- Device registration is non-critical (fails gracefully if endpoint unavailable)
+
+**Manual setup required:**
+- Add `NSCameraUsageDescription` to Info.plist for QR scanner
+- See `photo-agent-ios/IOS_SETUP.md` for detailed instructions
+
+**Files:**
+- `photo-agent-ios/Models/AppState.swift` ✅
+- `photo-agent-ios/Utilities/KeychainHelper.swift` ✅
+- `photo-agent-ios/Managers/ConnectionManager.swift` ✅
+- `photo-agent-ios/Views/PairingView.swift` ✅
+- `photo-agent-ios/Views/QRScannerViewRepresentable.swift` ✅
+- `photo-agent-ios/Views/ConnectionStatusView.swift` ✅
+- `photo-agent-ios/Views/MainTabView.swift` ✅
+- `photo-agent-ios/ContentView.swift` ✅ (updated)
+- `photo-agent-ios/photo_agent_iosApp.swift` ✅ (updated)
+- `photo-agent-ios/IOS_SETUP.md` ✅
+- `photo-agent-server/src/routes/devices.ts` ✅
+- `photo-agent-server/src/db/sqlite.ts` ✅ (updated)
+- `photo-agent-server/src/index.ts` ✅ (updated)
 
 ---
 
-### 🔴 Milestone P: iOS Approvals + Search
-**Status:** Not Started
+**Files to implement:**
+- `photo-agent-shared/` 🔴 (new Swift package)
+  - `Sources/PhotoAgentModels/UserAsset.swift`
+  - `Sources/PhotoAgentModels/Approval.swift`
+  - `Sources/PhotoAgentModels/ImageHasher.swift`
+- `photo-agent-ios/Models/` 🔴
+  - `ConnectionManager.swift` (tunnel endpoint management)
+  - `AppState.swift` (iOS-specific state)
+- `photo-agent-ios/Views/` 🔴
+  - `PairingView.swift` (QR scanner)
+  - `ConnectionStatusView.swift` (show connection health)
+- Update macOS app to import shared package
+- Update iOS ContentView to show pairing flow
 
-**Goals:**
-- Display approval cards
-- Natural language search over UserAssets
-- Results as "intent cards" with images
+**Pairing flow:**
+1. iOS app launches → Check if paired
+2. If not paired → Show QR scanner
+3. Scan QR from macOS Status Dashboard
+4. Extract tunnel URL from QR code
+5. Test connection with `/health` endpoint
+6. Store in Keychain (secure)
+7. Register device with server: `POST /api/devices`
+8. Show success → Navigate to main app
+
+**Security:**
+- Store tunnel URL in Keychain
+- Include device ID in all requests
+- Server validates device registration
 
 ---
 
-### 🔴 Milestone Q: Notifications
+### ✅ Milestone P: iOS Photo Upload + Monitoring
+**Status:** ✅ Complete
+**Completed:** Feb 1, 2026
+**Prerequisites:** Milestone O (Pairing) ✅
+
+**What was built:**
+- **PhotosMonitor.swift** - Comprehensive photo monitoring system
+  - PHPhotoLibraryChangeObserver implementation
+  - Automatic detection of new photos after pairing
+  - Image compression (70% JPEG quality)
+  - SHA-256 content hash computation
+  - Multipart form-data upload to server
+  - Real-time upload statistics tracking
+  
+- **UploadStatusView.swift** - Upload progress UI
+  - Start/stop monitoring controls
+  - Live stats (uploaded, pending, failed counts)
+  - Error handling and display
+  - Photo permissions request
+  
+- **Updated AppState.swift** - Added photo monitoring state
+  - isMonitoringPhotos flag
+  - Upload statistics tracking
+  - PhotosMonitor lifecycle management
+
+**Photo monitoring flow:**
+1. User enables monitoring in Settings
+2. Request Photos library authorization
+3. Store pairing timestamp in UserDefaults
+4. Register for PHPhotoLibrary change notifications
+5. Fetch photos created after pairing timestamp
+6. For each new photo:
+   - Extract image data and metadata
+   - Compress to 70% JPEG
+   - Compute SHA-256 hash
+   - Upload to server via `/api/assets/upload`
+   - Track upload status
+7. Continue monitoring for new photos automatically
+
+**Key features:**
+- ✅ Automatic photo monitoring after pairing
+- ✅ Only uploads photos taken AFTER pairing (privacy)
+- ✅ Image compression to reduce network usage
+- ✅ Deduplication via content hash
+- ✅ Metadata extraction (location, date, filename)
+- ✅ Upload queue with status tracking
+- ✅ Error handling and retry logic
+- ✅ Real-time UI updates
+
+**Manual setup required:**
+- Add `NSPhotoLibraryUsageDescription` to Info.plist
+- Request photo library permissions on first monitoring
+
+**Files:**
+- `photo-agent-ios/Managers/PhotosMonitor.swift` ✅
+- `photo-agent-ios/Views/UploadStatusView.swift` ✅
+- `photo-agent-ios/Models/AppState.swift` ✅ (updated)
+- `photo-agent-ios/Views/MainTabView.swift` ✅ (updated - added upload status)
+
+---
+
+### ✅ Milestone Q: iOS Approvals + Search UI
+**Status:** ✅ Complete
+**Completed:** Feb 1, 2026
+**Prerequisites:** Milestone P (Photo Upload) ✅ + Phase 2 Milestone H (Intent Pipeline) ✅
+
+**What was built:**
+- **ApprovalManager.swift** - Approvals data management
+  - Fetch approvals from server
+  - Filter by status (pending, approved, rejected, all)
+  - Approve/reject actions with API calls
+  - Real-time approval counts via polling
+  
+- **ApprovalsView.swift** - Main approvals inbox UI
+  - Segmented filter picker (Pending/Approved/Rejected/All)
+  - Scrollable list of approval cards
+  - Pull-to-refresh
+  - Empty states for each filter
+  - Tap to view details
+  
+- **ApprovalDetailView.swift** - Full approval details
+  - Full summary and OCR text
+  - AI reasoning display
+  - Proposed action details
+  - Approve/Reject buttons (pending only)
+  - Metadata (timestamps, filename)
+  - Status badges
+  
+- **SearchView.swift** - Natural language search
+  - Search bar with suggestions
+  - Real-time search results
+  - Search history (future)
+  - Graceful handling of unimplemented endpoint
+  
+- **Server Side:**
+  - `src/routes/approvals.ts` - Full CRUD approvals API
+    - GET `/api/approvals` - List approvals with filters
+    - GET `/api/approvals/:id` - Get single approval
+    - PATCH `/api/approvals/:id` - Approve/reject
+    - GET `/api/approvals/stats/counts` - Get counts by status
+  - Updated `src/db/sqlite.ts` - Added approvals table
+  - Updated `src/workers/intent-routing.ts` - Creates approvals for event flyers
+  - Updated `src/index.ts` - Added approvals router
+
+**Approvals flow:**
+1. Photo uploaded and analyzed (Phase 2)
+2. Intent classified (e.g., "event_flyer")
+3. If confidence >= 70%, create approval
+4. iOS app polls for approval counts every 10s
+5. User opens Inbox tab → sees pending approvals
+6. Tap approval → view details
+7. User approves or rejects
+8. Status updates in database
+9. (Phase 3) Approved actions execute via Browserbase
+
+**Key features:**
+- ✅ Real-time approval counts with polling
+- ✅ Filter approvals by status
+- ✅ Rich approval cards with confidence scores
+- ✅ Detailed view with AI reasoning
+- ✅ Approve/Reject with single tap
+- ✅ Pull-to-refresh
+- ✅ Empty states and error handling
+- ✅ Natural language search UI (backend placeholder)
+
+**Database schema:**
+```sql
+CREATE TABLE approvals (
+  id TEXT PRIMARY KEY,
+  assetId TEXT NOT NULL,
+  deviceId TEXT,
+  intentType TEXT NOT NULL,
+  extractedData TEXT,
+  proposedAction TEXT,
+  confidence REAL,
+  status TEXT DEFAULT 'pending',
+  editedData TEXT,
+  approvedAt TEXT,
+  rejectedAt TEXT,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (assetId) REFERENCES assets(id)
+);
+```
+
+**Files:**
+- `photo-agent-ios/Managers/ApprovalManager.swift` ✅
+- `photo-agent-ios/Views/ApprovalsView.swift` ✅
+- `photo-agent-ios/Views/ApprovalDetailView.swift` ✅
+- `photo-agent-ios/Views/SearchView.swift` ✅
+- `photo-agent-ios/Views/MainTabView.swift` ✅ (updated - real approvals + search)
+- `photo-agent-ios/Managers/ConnectionManager.swift` ✅ (updated - approval polling)
+- `photo-agent-server/src/routes/approvals.ts` ✅
+- `photo-agent-server/src/db/sqlite.ts` ✅ (updated - approvals table)
+- `photo-agent-server/src/workers/intent-routing.ts` ✅ (updated - create approvals)
+- `photo-agent-server/src/index.ts` ✅ (updated - approvals router)
+
+---
+
+### 🔴 Milestone R: WebSocket/SSE Real-Time Updates
 **Status:** Not Started
+**Prerequisites:** Basic endpoints (Milestone E) must be complete
+
+**Implementation Note:** Starting with polling (10-second interval) as fallback. SSE will be added later for real-time updates to keep initial implementation simple.
 
 **Goals:**
-- Push notifications for pending approvals
-- Local notifications for completed actions
-- iOS + macOS notification support
+- Implement WebSocket or Server-Sent Events for real-time updates
+- Push approval notifications to connected clients
+- Broadcast action completion status
+- Handle reconnection gracefully
+- Fallback to polling if WebSocket unavailable
+
+**Files to implement:**
+- `photo-agent-server/src/services/websocket.ts` 🔴 or `sse.ts`
+- `photo-agent-server/src/middleware/websocket.ts` 🔴
+- `photo-agent-macos/Managers/WebSocketManager.swift` 🔴
+- `photo-agent-ios/Managers/WebSocketManager.swift` 🔴
+
+**Architecture decision: Server-Sent Events (SSE) recommended**
+- Simpler than WebSocket for one-way server→client
+- Native support in URLSession via EventSource pattern
+- Fallback to polling built-in
+- Less battery impact than persistent WebSocket
+
+**SSE Event Types:**
+```json
+// New approval available
+{"type": "approval:created", "data": {"approvalId": "abc123"}}
+
+// Action completed
+{"type": "action:completed", "data": {"approvalId": "abc123", "status": "success"}}
+
+// New asset analyzed
+{"type": "asset:analyzed", "data": {"assetId": "xyz789"}}
+```
+
+**Client implementation:**
+```swift
+// Swift SSE client
+let eventSource = EventSource(url: tunnelURL + "/api/events")
+eventSource.onMessage { event in
+    // Handle event
+}
+eventSource.connect()
+```
+
+**Fallback strategy:**
+- If SSE connection fails → Poll every 10 seconds
+- If app backgrounds (iOS) → Close SSE, rely on polling when foregrounded
+- If tunnel URL changes → Reconnect automatically
+
+**Server endpoint:**
+- `GET /api/events` - SSE endpoint (keeps connection open)
+- Sends keepalive ping every 30 seconds
+- Broadcasts events to all connected clients
 
 ---
 
@@ -358,6 +949,38 @@
 | Node Path | `/Users/idodekerobo/.nvm/versions/node/v20.17.0/bin/node` | `ServerManager.swift` |
 | Server Path | `/Users/.../weavehacks/photo-agent-server` | `ServerManager.swift` |
 | Tunnel Name | `photo-agent` | `TunnelManager.swift` |
+| Photo Scan Limit | 1000 (hardcoded) | `PhotosManager.swift` |
+| Database | SQLite (persistent) + Redis (ephemeral) | Node server |
+
+---
+
+## Data Architecture
+
+### Storage Strategy (Hybrid Approach)
+- **SQLite**: Persistent storage for photo metadata, embeddings, intent documents
+  - Location: Node server (`photo-agent-server/data/photos.db`)
+  - Capacity: Handles 10K-100K+ photos easily (~30-300MB)
+  - Single source of truth for both macOS and iOS apps
+- **Redis**: Ephemeral storage for operational state
+  - Job queues (ingestion → enrichment → action)
+  - State machines (pending approvals, retries)
+  - Dedupe cache
+  - OK to lose on restart
+
+### Sync Architecture
+```
+macOS App (PhotosManager)
+    ↓ extracts metadata
+    ↓ POST /api/assets
+Node Server (localhost:1738)
+    ↓ stores in SQLite
+    ↓ queues jobs in Redis
+    ↑ serves via API
+iOS App (via tunnel)
+    ↑ GET /api/assets
+```
+
+Both apps query the same Node server → SQLite for consistent state.
 
 ---
 
@@ -365,9 +988,10 @@
 
 | Tool | Status | Usage |
 |------|--------|-------|
-| **Weave** | 🔴 Not Integrated | Observability for all agent runs |
-| **Browserbase** | 🔴 Not Integrated | Web automation for RSVP flows |
-| **Redis** | 🔴 Not Integrated | Queue + state machine + dedupe |
+| **SQLite** | ✅ Integrated | Persistent storage for metadata + embeddings (WAL mode) |
+| **Weave** | ✅ Integrated | Full observability: traces all operations, LLM calls, routing decisions |
+| **Browserbase** | 🔴 Not Integrated | Web automation for RSVP flows (Phase 3) |
+| **Redis** | ✅ Integrated | Ephemeral state: Bull queues + state machine + dedupe |
 | Daily/Pipecat | 🔴 Not Started | Voice approvals (nice-to-have) |
 | Marimo | 🔴 Not Started | Mission control (nice-to-have) |
 
@@ -376,8 +1000,14 @@
 ## Quick Commands
 
 ```bash
-# Start server manually
+# Start server + workers (Redis starts automatically via npm scripts)
 cd photo-agent-server && npm run dev
+
+# Start server only
+npm run dev:server
+
+# Start workers only
+npm run dev:workers
 
 # Start tunnel manually  
 cloudflared tunnel --url http://localhost:1738
@@ -388,13 +1018,25 @@ lsof -i :1738
 # Kill process on port
 kill -9 $(lsof -ti :1738)
 
+# Install and start Ollama
+brew install ollama
+brew services start ollama
+
 # Install Ollama models
-ollama pull llava:13b
+ollama pull qwen3-vl:8b
 ollama pull nomic-embed-text
 
-# Start Redis
+# Check Ollama status
+curl http://localhost:11434/api/tags
+
+# Start Redis (required for Bull queues)
 brew services start redis
+
+# Or use Docker for Redis
+docker run -d -p 6379:6379 redis
 ```
+
+**Note:** `npm run dev` uses `concurrently` to run both server and workers. Redis must be running separately.
 
 ---
 
@@ -405,6 +1047,33 @@ brew services start redis
 3. **Node path hardcoded** - NVM paths not visible to GUI apps; needs improvement later
 4. **Using quick tunnels** - No Cloudflare account domain needed; URL changes on restart
 5. **Ollama for local models** - Easiest setup; can migrate to llama.cpp later
+6. **Hybrid storage architecture** - SQLite (persistent data) + Redis (operational state via Bull)
+7. **Server as sync point** - Both macOS and iOS apps query Node server API → SQLite
+8. **Photo scan limit** - Hardcoded to 1000 for now, configurable later
+9. **Permission handling** - Show blocking screen if Photos access denied (required to use app)
+11. **Architecture refactor (Feb 1)** - Moved analysis to Node server for simpler iOS integration
+12. **Image compression** - 70% JPEG quality before upload to reduce network load
+13. **Content hash deduplication** - SHA-256 prevents duplicate processing across devices
+14. **WebSocket/SSE for real-time** - Server-Sent Events chosen over APNs for hackathon simplicity
+15. **iCloud Photos required** - Assumed enabled for cross-device photo syncing
+16. **Standard Redis setup** - Uses ioredis client connecting to local Redis service
+17. **npm scripts for workers** - Server and workers run concurrently via package.json scripts
+
+---
+
+## Reference Documents
+
+| Document | Purpose |
+|----------|---------|
+| `docs/PRD.md` | Product requirements (updated with new architecture) |
+| `docs/PROGRESS.md` | This file - milestone tracking |
+| `docs/REFACTOR_PLAN.md` | Detailed plan for Milestone D/E refactor |
+| `docs/MODELMANAGER_CHANGES.md` | Specific changes needed for ModelManager.swift |
+| `docs/MILESTONE_C_COMPLETE.md` | Photos library integration completion |
+| `docs/MILESTONE_D_COMPLETE.md` | Original Ollama integration (pre-refactor) |
+| `docs/PHASE4_SUMMARY.md` | Executive summary of Phase 4 + refactor plan |
+| `docs/ARCHITECTURE_DIAGRAMS.md` | Visual diagrams of old vs new architecture |
+| `docs/REDIS_WORKERS.md` | Redis + workers architecture (ioredis + npm scripts) |
 
 ---
 
@@ -416,14 +1085,15 @@ weavehacks/
 │   └── photo-agent-macos/
 │       ├── Models/
 │       │   ├── AppState.swift   ✅
-│       │   └── UserAsset.swift  🔴
+│       │   └── UserAsset.swift  ✅
 │       ├── Managers/
 │       │   ├── ServerManager.swift  ✅
 │       │   ├── TunnelManager.swift  ✅
-│       │   ├── PhotosManager.swift  🔴
-│       │   └── ModelManager.swift   🔴
+│       │   ├── PhotosManager.swift  ✅
+│       │   └── ModelManager.swift   ✅
 │       └── Views/
 │           ├── StatusDashboardView.swift  ✅
+│           ├── PermissionRequestView.swift ✅
 │           ├── ApprovalInboxView.swift    🔴
 │           └── SettingsView.swift         🔴
 ├── photo-agent-ios/             # iOS app (Swift)

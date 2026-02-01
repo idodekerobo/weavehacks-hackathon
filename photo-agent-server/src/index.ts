@@ -2,7 +2,10 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import assetsRouter from './routes/assets';
+import devicesRouter from './routes/devices';
+import approvalsRouter from './routes/approvals';
 import { serverAdapter } from './services/queue';
+import { initWeave } from './services/weave';
 import './db/sqlite';
 
 dotenv.config();
@@ -15,6 +18,8 @@ app.use(express.json());
 
 // Routes
 app.use('/api/assets', assetsRouter);
+app.use('/api/devices', devicesRouter);
+app.use('/api/approvals', approvalsRouter);
 app.use('/admin/queues', serverAdapter.getRouter());
 
 app.get('/health', (req: Request, res: Response) => {
@@ -29,7 +34,12 @@ app.post('/api/assets', (req: Request, res: Response) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 Bull Board available at http://localhost:${PORT}/admin/queues`);
-});
+// Initialize Weave before starting server
+(async () => {
+  await initWeave();
+  
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`📊 Bull Board available at http://localhost:${PORT}/admin/queues`);
+  });
+})();

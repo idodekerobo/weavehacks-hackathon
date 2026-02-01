@@ -1,0 +1,7 @@
+---
+alwaysApply: true
+---
+
+When making changes or advising, confirm this makes sense with the project PRD, located at `docs/PRD.md`. 
+
+If I'm explicitly saying to do something that isn't in the PRD, confirm with me and if I give you approval, update the PRD to reflect this change/new addition.
