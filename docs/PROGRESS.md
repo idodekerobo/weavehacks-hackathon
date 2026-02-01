@@ -12,8 +12,8 @@
 | iOS App | ✅ Phase 4 Complete | Pairing + Photo Upload + Approvals + Search UI (backend pending) |
 | Node Server | ✅ Phase 2 Complete | SQLite + Bull queues + Ollama analysis + Weave + Approvals API |
 | Agentic Search | ✅ Milestone H-2 | Vercel AI SDK + tool calls + Weave tracing |
-| Event Extraction | 🔴 Ready to Build | Milestone J - Ollama structured output (see `MILESTONE_JK_PLAN.md`) |
-| Web Search | 🔴 Ready to Build | Milestone K - Browserbase Stagehand (see `MILESTONE_JK_PLAN.md`) |
+| Event Extraction | ✅ Milestone J | Ollama structured output with JSON schema enforcement |
+| Web Search | ✅ Milestone K | Browserbase Stagehand + verification + artifacts storage |
 | Admin Dashboard | 🟡 Partial | Bull Board provides queue monitoring |
 
 ---
@@ -66,6 +66,8 @@ This order prioritizes features that provide immediate testable value and builds
 | **#5** | **N** | 🔴 Follow | **macOS approvals inbox UI** (clone iOS) | Can I approve events on Mac? |
 
 **🎉 At this point, you have a COMPLETE DEMO** (search + extract + calendar + approvals)
+
+**✅ MILESTONE J & K COMPLETE!** Next up: Calendar Integration (M)
 
 ---
 
@@ -807,48 +809,90 @@ For judges/demos, each search will show:
 
 ---
 
-### 🔴 Milestone J: Flyer Detection + Event Extraction
-**Status:** Not Started
+### ✅ Milestone J: Flyer Detection + Event Extraction
+**Status:** Complete  
+**Completed:** Feb 1, 2026
 
-**Implementation Decisions:**
-- **Structured Output**: Use Ollama's native structured output capabilities (JSON schema enforcement)
-- **Ambiguous Data**: Return ambiguous dates/times as-is for human review in approval flow
-- **Model**: Use existing `qwen3-vl:8b` vision model
+**Implementation:**
+- **Structured Output**: Uses Ollama's native JSON schema enforcement (`format: 'json'`)
+- **Model**: Existing `qwen3-vl:8b` vision model
+- **Ambiguous Data**: Returns dates/times as-is for human review in approval flow
 
-**Goals:**
-- Identify event flyers with high confidence (reuse existing `classifyIntent` function)
-- Extract structured event details using Ollama JSON schema:
-  - Event name (required)
-  - Date (required)
-  - Time (optional - might be TBD)
-  - Location/venue (required)
-  - URL (optional - might not be on flyer)
-  - Description (optional)
-  - Ticket price (optional)
-- Additional fields may be enriched from Browserbase web search (Milestone K)
-- Handle ambiguous dates/times by returning as-is for human review
+**What was built:**
+- `src/services/event-extraction.ts` - Ollama structured extraction with JSON schema
+- Updated `src/workers/intent-routing.ts` - Calls extraction for event flyers
+- Updated `src/db/sqlite.ts` - Added `eventDetails` JSON column
+- SQLite schema includes: `eventDetails`, `canonicalUrl`, `verifiedDetails`, `screenshotPath`, `verificationConfidence`
 
-**Nice-to-Have (if time):**
+**Event Schema:**
+```typescript
+interface ExtractedEvent {
+  eventName: string;      // required
+  date: string;           // required (may be ambiguous)
+  time?: string;          // optional
+  location: string;       // required (city/area)
+  venue?: string;         // optional (specific venue)
+  url?: string;           // optional
+  description?: string;   // optional
+  ticketPrice?: string;   // optional
+  confidence: number;     // 0.0-1.0
+}
+```
+
+**Testing:** See `docs/TESTING_JK.md` for test cases
+
+**Nice-to-Have (deferred):**
 - QR code detection and decoding (add `jsqr` library for reliability)
 
 ---
 
-### 🔴 Milestone K: Web Search for Canonical Event
-**Status:** Not Started
+### ✅ Milestone K: Web Search for Canonical Event
+**Status:** Complete  
+**Completed:** Feb 1, 2026
 
-**Implementation Decisions:**
-- **Browserbase SDK**: Use Stagehand TypeScript SDK (https://docs.stagehand.dev)
-- **Search Strategy**: Navigate to Google, search for "[event name] [location] [date]", extract results
-- **Session Management**: Create new session per search (pause/keep-alive for HITL workflows later)
-- **Verification**: Use local Ollama vision model to verify extracted details + Browserbase screenshots match original flyer
-- **Artifacts**: Store screenshots/recordings on local filesystem, reference in Weave traces
+**Implementation:**
+- **Browserbase SDK**: Stagehand TypeScript SDK (https://docs.stagehand.dev)
+- **Search Strategy**: Navigate to Google, search with extracted details, check top 3 results
+- **Session Management**: New session per search (pause/keep-alive for HITL deferred)
+- **Verification**: Ollama vision model compares flyer vs browser screenshots
+- **Artifacts**: Screenshots/recordings stored locally, linked in Weave traces
 
-**Goals:**
-- Use Browserbase Stagehand to search web for extracted event details
-- Navigate browser to Google, search, and find canonical event page (Eventbrite, Luma, Meetup, etc.)
-- Verify extracted details match using Ollama vision model comparison (original flyer vs browser screenshots)
-- Handle "couldn't find" case gracefully
-- Capture session recordings and screenshots for debugging (stored locally, linked in Weave)
+**What was built:**
+- `src/services/browserbase.ts` - Stagehand integration with Google search + verification
+- `src/workers/event-search.ts` - Worker queue for web search jobs
+- `src/services/queue.ts` - Added `eventSearchQueue`
+- `artifacts/screenshots/` - Screenshot storage directory
+- `.env.example` - Added `BROWSERBASE_PROJECT_ID`
+
+**Search Flow:**
+1. Initialize Browserbase session with Stagehand
+2. Navigate to Google
+3. Use `act()` to search for event
+4. Use `extract()` to get top 5 results (Zod schemas)
+5. Visit top 3 results
+6. Take full-page screenshot of each
+7. Extract event details from page
+8. Verify match using Ollama vision model comparison
+9. If verified (confidence >= 0.7), create approval
+10. Store session ID and recording URL
+
+**Verification Strategy:**
+Uses Ollama `qwen3-vl:8b` to compare:
+- Original flyer image
+- Browser screenshot of found page
+- Extracted event details from both
+- Returns match confidence (0.0-1.0)
+
+**Session Recordings:**
+All Browserbase sessions recorded and available at:
+`https://www.browserbase.com/sessions/{sessionId}`
+
+**Testing:** See `docs/TESTING_JK.md` for detailed test cases
+
+**Artifacts Storage:**
+- Screenshots: `artifacts/screenshots/event_{timestamp}_result{n}.png`
+- Referenced in SQLite `screenshotPath` column
+- Session recordings available via Browserbase console
 
 ---
 

@@ -4,6 +4,7 @@ import { initWeave } from '../services/weave';
 import './image-upload';
 import './image-analysis';
 import './intent-routing';
+import './event-search';
 
 // Initialize Weave for all workers
 (async () => {

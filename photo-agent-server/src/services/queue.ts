@@ -33,6 +33,10 @@ export const intentRoutingQueue = new Bull('intent-routing', {
   redis: redisConfig
 });
 
+export const eventSearchQueue = new Bull('event-search', {
+  redis: redisConfig
+});
+
 // Bull Board UI
 export const serverAdapter = new ExpressAdapter();
 serverAdapter.setBasePath('/admin/queues');
@@ -41,7 +45,8 @@ createBullBoard({
   queues: [
     new BullAdapter(imageUploadQueue),
     new BullAdapter(imageAnalysisQueue),
-    new BullAdapter(intentRoutingQueue)
+    new BullAdapter(intentRoutingQueue),
+    new BullAdapter(eventSearchQueue)
   ],
   serverAdapter
 });
@@ -62,6 +67,7 @@ process.on('SIGTERM', async () => {
   await imageUploadQueue.close();
   await imageAnalysisQueue.close();
   await intentRoutingQueue.close();
+  await eventSearchQueue.close();
 });
 
 console.log('✅ Bull queue service initialized');

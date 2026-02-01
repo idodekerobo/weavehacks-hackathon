@@ -167,7 +167,7 @@ The iOS app is the “on-the-go” way to:
   4. Store results in SQLite
   5. Queue downstream jobs (intent routing, web enrichment) in Redis/Bull
 - **Server as sync point**: Both macOS and iOS apps query the Node server API, which reads from SQLite (single source of truth)
-- **Real-time updates**: WebSocket/SSE connection for approval notifications and action status updates (planned)
+- **Real-time updates**: ⏸️ Deferred - Polling works fine for hackathon (WebSocket/SSE can be added later if needed)
 - **Image deduplication**: ✅ SHA-256 content hash prevents duplicate processing across devices
 - **Scalability**: SQLite easily handles 10K-100K+ photos with 512-dim embeddings (~30-300MB total)
 
@@ -189,7 +189,64 @@ The product ships with a core capability (“agentic search”), then allows use
 
 ---
 
+## Core Skill: Agentic Search (REQUIRED - Priority #1)
+
+### What it does
+Conversational, natural language search using **Vercel AI SDK** agent loop with tool calls. Users can search their photos with queries like:
+- "give me images that have red flowers"
+- "show me event flyers from this week"
+- "find photos taken in San Francisco"
+- "screenshots with code or programming"
+
+### Technical architecture
+- **Vercel AI SDK**: Agent orchestration with tool calling
+- **Weave**: Full tracing of agent decisions, tool executions, and LLM calls
+- **Ollama (nomic-embed-text)**: Generate query embeddings
+- **SQLite**: Cosine similarity search over stored embeddings
+
+### Search tools available to agent
+1. `search_by_embedding` - Semantic search via cosine similarity
+2. `search_by_text` - Full-text search on OCR/summary fields
+3. `filter_by_intent` - Filter by event_flyer/general_photo/other
+4. `filter_by_date_range` - Natural language date filtering
+5. `filter_by_location` - Proximity-based location filtering
+
+### Agent loop example
+```
+User: "give me images that have red flowers"
+
+Agent → Tool 1: search_by_embedding("red flowers", topK=20)
+       Returns 20 semantically similar images
+
+Agent → Tool 2: search_by_text("red flower")
+       Returns 8 images with those keywords
+
+Agent → Combines and ranks results
+       Returns final 10 with explanations
+```
+
+### Why priority #1
+- Immediate testable value (search "red flowers" → validate results)
+- Demonstrates agent capabilities (real tool use, not just LLM chat)
+- Foundation for everything (event extraction uses same embeddings)
+- Weave showcase (every decision traced and visible)
+- iOS UI already built (SearchView.swift ready)
+
+---
+
 ## Flagship skill A — Flyer → RSVP → Calendar (required)
+
+### Implementation strategy: Calendar BEFORE Browserbase
+**Key insight:** Calendar integration (M) is WAY easier than Browserbase (I+L) but provides immediate testable value. Build in phases.
+
+**Phase 1 - Core Demo (Priority #2-5):**
+1. Event Extraction (J) - Extract details using Ollama structured output
+2. Calendar Integration (M) - Create calendar events via EventKit (50 lines, local)  
+3. Web Search (K) - Find canonical event pages via Browserbase (browser automation)
+4. macOS UI (N) - Approvals inbox on Mac
+
+**Phase 2 - Wow Factor (Priority #6):**
+5. RSVP Automation (I+L) - Browserbase web automation
 
 ### Trigger inputs
 Any of:
@@ -212,11 +269,12 @@ Any of:
    - “RSVP confirmed. Added to Calendar.”
 
 ### Where Browserbase is *product-critical*
-Browserbase is used for the “hard parts”:
-- Navigating real websites to locate the canonical event page.
-- Extracting structured event details reliably (time zone, address, ticketing rules).
-- Completing RSVP/sign-up forms.
-- Producing evidence artifacts (screenshots/recordings) for trust and debugging.
+Browserbase is the ONLY tool used for all web interactions:
+- Searching the web to find the canonical event page (no API fallbacks)
+- Navigating real websites to locate the canonical event page
+- Extracting structured event details reliably (time zone, address, ticketing rules)
+- Completing RSVP/sign-up forms
+- Producing evidence artifacts (screenshots/recordings) for trust and debugging
 
 ### HITL (must)
 User approval is required before:

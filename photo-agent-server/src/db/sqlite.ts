@@ -35,6 +35,11 @@ db.exec(`
     intentLabels TEXT,
     confidence REAL,
     imageData BLOB,
+    eventDetails TEXT,
+    canonicalUrl TEXT,
+    verifiedDetails TEXT,
+    screenshotPath TEXT,
+    verificationConfidence REAL,
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
   );
@@ -43,6 +48,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_creation_date ON assets(creationDate DESC);
   CREATE INDEX IF NOT EXISTS idx_device_id ON assets(deviceId);
   CREATE INDEX IF NOT EXISTS idx_photo_library_id ON assets(photoLibraryId);
+  CREATE INDEX IF NOT EXISTS idx_intent_labels ON assets(intentLabels);
 
   CREATE TABLE IF NOT EXISTS devices (
     deviceId TEXT PRIMARY KEY,
