@@ -1,6 +1,6 @@
 # Photos-as-Intent Agent — Progress Tracker
 
-**Last Updated:** Feb 1, 2026 (Migrated to AI SDK 6 ToolLoopAgent + ollama-ai-provider-v2)
+**Last Updated:** Feb 1, 2026 (Migrated to OpenAI Agents SDK for search agent)
 
 ---
 
@@ -11,7 +11,7 @@
 | macOS App | ✅ Refactor Complete | Server + Tunnel + Photos + Image Upload (70% JPEG) + Models status check |
 | iOS App | ✅ Phase 4 Complete | Pairing + Photo Upload + Approvals + Search UI (backend pending) |
 | Node Server | ✅ Phase 2 Complete | SQLite + Bull queues + Ollama analysis + Weave + Approvals API |
-| Agentic Search | ✅ Milestone H-2 | Vercel AI SDK + tool calls + Weave tracing |
+| Agentic Search | ✅ Milestone H-2 | **OpenAI Agents SDK** + tool calls + Weave tracing |
 | Event Extraction | ✅ Milestone J | Ollama structured output with JSON schema enforcement |
 | Web Search | ✅ Milestone K | Browserbase Stagehand + verification + artifacts storage |
 | Admin Dashboard | 🟡 Partial | Bull Board provides queue monitoring |
@@ -59,7 +59,7 @@ This order prioritizes features that provide immediate testable value and builds
 
 | Priority | Milestone | Status | Description | Test After |
 |----------|-----------|--------|-------------|------------|
-| **#1** | **H-2** | 🟡 In Progress | **Agentic search with tool calls** (Vercel AI SDK + Weave) | Can I search "red flowers" and get results? |
+| **#1** | **H-2** | ✅ Complete | **Agentic search with tool calls** (OpenAI Agents SDK + Weave) | Can I search "red flowers" and get results? |
 | **#2** | **J** | ✅ Complete | **Event extraction from flyers** (Ollama structured output) | Does it extract event name, date, location? |
 | **#3** | **K** | ✅ Complete | **Web search for canonical event** (Browserbase automation) | Does it find the right event URL? |
 | **#4** | **M** | ✅ Complete | **Calendar integration** (Google Calendar API + OAuth 2.0) | Do events appear in Google Calendar? ✅ |
@@ -67,7 +67,7 @@ This order prioritizes features that provide immediate testable value and builds
 
 **🎉 At this point, you have a COMPLETE DEMO** (search + extract + calendar + approvals)
 
-**✅ MILESTONE J, K, M & N COMPLETE!** Next priority: Complete Agentic Search (H-2)
+**✅ ALL PHASE 3 MILESTONES COMPLETE!** Search agent migrated to OpenAI Agents SDK.
 
 ---
 
@@ -1636,6 +1636,37 @@ docker run -d -p 6379:6379 redis
 ---
 
 ## 📝 Recent Changes
+
+### Feb 1, 2026 - Migrated Search Agent to OpenAI Agents SDK
+- **Migration:** Replaced Vercel AI SDK with OpenAI Agents SDK for search agent
+  - **Branch:** `feature/openai-agents-sdk-migration`
+  - **Model:** `gpt-4o-mini` for agent reasoning (cost-effective, excellent function calling)
+  - **Embeddings:** Still using Ollama `nomic-embed-text` (local, free)
+  - **Image Analysis:** Still using Ollama `qwen` (local, free)
+- **Architecture:** Hybrid approach
+  - OpenAI API for agent orchestration and reasoning
+  - Ollama for embeddings (stays local, no API costs)
+  - Weave tracing integration via `WeaveTracingProcessor`
+- **New Dependencies:**
+  - `@openai/agents` - OpenAI Agents SDK
+  - `openai` - OpenAI API client
+- **Removed Dependencies:**
+  - `ai` - Vercel AI SDK
+  - `@ai-sdk/openai-compatible`
+  - `ollama-ai-provider-v2`
+- **New Configuration:**
+  - `OPENAI_API_KEY` required in `.env`
+- **Files Changed:**
+  - `photo-agent-server/package.json` - Updated dependencies
+  - `photo-agent-server/src/services/search-agent.ts` - Full rewrite with OpenAI Agents SDK
+  - `photo-agent-server/src/services/search-tools.ts` - Migrated tools to JSON schema format
+  - `photo-agent-server/src/services/weave.ts` - Added `WeaveTracingProcessor` for SDK integration
+  - `photo-agent-server/.env.example` - Added `OPENAI_API_KEY`
+- **Benefits:**
+  - Better function calling reliability
+  - Faster response times (no local model tool calling issues)
+  - Native streaming support
+  - Better Weave tracing integration
 
 ### Feb 1, 2026 - Enhanced Agent Debugging + Mistral Setup
 - **Added:** Comprehensive agent debugging with progress logging
