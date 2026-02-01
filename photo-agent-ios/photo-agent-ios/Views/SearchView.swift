@@ -391,6 +391,7 @@ struct ErrorStateView: View {
 
 struct SearchResult: Codable, Identifiable {
     let id: String
+    let photoLibraryId: String?  // iOS Photos library local identifier for fetching images
     let intentType: String?
     let summary: String?
     let ocrText: String?
