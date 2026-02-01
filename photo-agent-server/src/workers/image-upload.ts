@@ -3,7 +3,7 @@ import { db } from '../db/sqlite';
 import { v4 as uuidv4 } from 'uuid';
 import { logAttributes } from '../services/weave';
 
-imageUploadQueue.process(async (job) => {
+imageUploadQueue.process(5, async (job) => {
   const { photoLibraryId, contentHash, deviceId, creationDate, latitude, longitude, altitude, filename, mediaType, isFavorite, imageData } = job.data;
 
   logAttributes({
@@ -37,4 +37,4 @@ imageUploadQueue.process(async (job) => {
   return { assetId };
 });
 
-console.log('✅ Image upload worker started');
+console.log('✅ Image upload worker started (concurrency: 5)');

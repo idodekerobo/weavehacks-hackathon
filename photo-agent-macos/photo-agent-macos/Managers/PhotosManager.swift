@@ -18,6 +18,7 @@ class PhotosManager: ObservableObject {
     
     // Configuration
     private let scanLimit = 1000 // Hardcoded for now, make configurable later
+    private let uploadConcurrency = 5 // Number of concurrent uploads
     private let serverURL: String
     
     // Internal state
@@ -113,22 +114,40 @@ class PhotosManager: ObservableObject {
             print("📸 Found \(assets.count) photos to process")
             appState.photosScanStatus = .running
             
-            // Process each photo
-            for (index, asset) in assets.enumerated() {
-                let metadata = extractMetadata(from: asset)
+            // Process photos concurrently using TaskGroup
+            await withThrowingTaskGroup(of: Void.self) { group in
+                var processedCount = 0
+                var activeUploads = 0
                 
-                // Send to server
-                do {
-                    try await sendToServer(metadata)
-                    appState.photosScannedCount = index + 1
-                    print("📸 Processed \(index + 1)/\(assets.count): \(metadata.photoLibraryId)")
-                } catch {
-                    print("⚠️ Failed to send asset to server: \(error.localizedDescription)")
-                    // Continue with next photo even if one fails
+                for (index, asset) in assets.enumerated() {
+                    // Wait if we've reached max concurrency
+                    if activeUploads >= uploadConcurrency {
+                        try? await group.next()
+                        activeUploads -= 1
+                    }
+                    
+                    // Add upload task to group
+                    group.addTask { [weak self] in
+                        guard let self = self else { return }
+                        
+                        let metadata = self.extractMetadata(from: asset)
+                        
+                        do {
+                            try await self.sendToServer(metadata)
+                            await MainActor.run {
+                                processedCount += 1
+                                self.appState?.photosScannedCount = processedCount
+                                print("📸 Processed \(processedCount)/\(assets.count): \(metadata.photoLibraryId)")
+                            }
+                        } catch {
+                            print("⚠️ Failed to send asset to server: \(error.localizedDescription)")
+                        }
+                    }
+                    activeUploads += 1
                 }
                 
-                // Small delay to avoid overwhelming the server
-                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+                // Wait for all remaining uploads to complete
+                for try await _ in group {}
             }
             
             appState.photosScanStatus = .stopped

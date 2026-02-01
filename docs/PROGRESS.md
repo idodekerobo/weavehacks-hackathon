@@ -1,6 +1,6 @@
 # Photos-as-Intent Agent — Progress Tracker
 
-**Last Updated:** Feb 1, 2026 (Fixed photo transfer error handling)
+**Last Updated:** Feb 1, 2026 (Increased upload concurrency to 5x)
 
 ---
 
@@ -1612,6 +1612,7 @@ docker run -d -p 6379:6379 redis
 17. **npm scripts for workers** - Server and workers run concurrently via package.json scripts
 18. **Smart server detection (Feb 1)** - Mac app reuses existing healthy servers, kills unhealthy ones before restart
 19. **Weave API key fix (Feb 1)** - Changed from WEAVE_API_KEY to WANDB_API_KEY (required by Weave library internally)
+20. **Concurrent uploads (Feb 1)** - Mac app uploads 5 photos in parallel (5x faster); server storage processes 5 concurrently
 
 ---
 
