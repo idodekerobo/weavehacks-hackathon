@@ -1,23 +1,30 @@
-import { ToolLoopAgent, stepCountIs } from 'ai';
-import { ollama } from 'ollama-ai-provider-v2';
-import { 
-  searchByEmbedding, 
-  searchByText, 
-  filterByIntent,
-  filterByDateRange,
-  filterByLocation,
-  combineResults
-} from './search-tools';
+/**
+ * Search Agent - OpenAI Agents SDK Implementation
+ * 
+ * This agent uses the OpenAI Agents SDK for orchestration while keeping
+ * Ollama for embeddings (nomic-embed-text) and image analysis (qwen).
+ * 
+ * Migration from: Vercel AI SDK ToolLoopAgent + ollama-ai-provider
+ * Migration to: OpenAI Agents SDK + OpenAI models for reasoning
+ */
+
+import { Agent, run, setDefaultOpenAIKey, type RunStreamEvent } from '@openai/agents';
+import { searchTools } from './search-tools';
 import { logAttributes } from './weave';
 
 // Model configuration
-// Use Mistral for agentic search (better function calling) 
-// Use Qwen3-VL for vision tasks (image analysis) - e.g., 'qwen3-vl:8b'
-const AGENT_MODEL = 'mistral:instruct';
-const MAX_ITERATIONS = 5;
+// OpenAI for agent reasoning, Ollama for embeddings (in search-tools.ts)
+const AGENT_MODEL = 'gpt-4o-mini'; // Cost-effective for tool calling
+const MAX_TURNS = 5;
 
-// Fallback: Direct search without agent (for testing/debugging)
-const USE_AGENT = true; // Set to true to use agent, false for direct search
+// Initialize OpenAI API key
+const initializeOpenAI = () => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY is required for the search agent');
+  }
+  setDefaultOpenAIKey(apiKey);
+};
 
 export interface SearchRequest {
   query: string;
@@ -62,71 +69,69 @@ const SYSTEM_PROMPT = `You are a helpful search agent for a photo library system
 
 Your job is to help users find photos using natural language queries. You have access to several search tools:
 
-1. searchByEmbedding - Use for semantic/conceptual searches (e.g., "red flowers", "people at parties")
-2. searchByText - Use for exact text matches (e.g., specific words from flyers or screenshots)
-3. filterByIntent - Use to filter by type (event_flyer, general_photo, other)
-4. filterByDateRange - Use for time-based searches (e.g., "this week", "last 7 days")
-5. filterByLocation - Use for location-based searches (e.g., "photos in San Francisco")
-6. combineResults - Use to merge and deduplicate results from multiple searches
+1. search_by_embedding - Use for semantic/conceptual searches (e.g., "red flowers", "people at parties")
+2. search_by_text - Use for exact text matches (e.g., specific words from flyers or screenshots)
+3. filter_by_intent - Use to filter by type (event_flyer, general_photo, other)
+4. filter_by_date_range - Use for time-based searches (e.g., "this week", "last 7 days")
+5. filter_by_location - Use for location-based searches (e.g., "photos in San Francisco")
+6. combine_results - Use to merge and deduplicate results from multiple searches
 
 STRATEGY:
-- Start with semantic search (searchByEmbedding) for most queries
+- Start with semantic search (search_by_embedding) for most queries
 - Add text search if the query has specific keywords
 - Apply filters (intent, date, location) to refine results
 - Combine and deduplicate at the end
 - You can call multiple tools, but try to be efficient (aim for 2-3 tool calls)
 
 IMPORTANT:
-- Always return results in JSON format
+- Always return results in a helpful format
 - Include the photoLibraryId for each result (iOS needs this to fetch images)
-- Be conversational and helpful in your reasoning`;
+- Be conversational and helpful in your reasoning
+- After finding results, summarize what you found for the user`;
 
-/**
- * Create the search agent instance using ToolLoopAgent
- * This is a reusable agent that can be called multiple times
- */
-const createSearchAgent = () => new ToolLoopAgent({
-  model: ollama(AGENT_MODEL),
-  instructions: SYSTEM_PROMPT,
-  tools: {
-    searchByEmbedding,
-    searchByText,
-    filterByIntent,
-    filterByDateRange,
-    filterByLocation,
-    combineResults
-  },
-  stopWhen: stepCountIs(MAX_ITERATIONS),
-  experimental_telemetry: {
-    isEnabled: true,
-  },
-});
+// Create the search agent instance
+const createSearchAgent = () => {
+  initializeOpenAI();
+  
+  return new Agent({
+    name: 'PhotoSearchAgent',
+    model: AGENT_MODEL,
+    instructions: SYSTEM_PROMPT,
+    tools: searchTools,
+  });
+};
 
 // Singleton agent instance for reuse
-let searchAgent: ReturnType<typeof createSearchAgent> | null = null;
+let searchAgent: Agent | null = null;
 
 const getSearchAgent = () => {
   if (!searchAgent) {
+    console.log(`   🔧 Creating new OpenAI Agent with model: ${AGENT_MODEL}`);
     searchAgent = createSearchAgent();
   }
   return searchAgent;
 };
 
+// Reset agent (useful when config changes)
+export const resetSearchAgent = () => {
+  searchAgent = null;
+  console.log('   🔄 Search agent reset');
+};
+
 /**
  * Streaming agent-based search implementation
- * Uses Vercel AI SDK ToolLoopAgent for agent loop orchestration
+ * Uses OpenAI Agents SDK for agent loop orchestration
  * Returns an async generator that yields progressive updates
  */
 export async function* agentSearchStreaming(request: SearchRequest): AsyncGenerator<SearchStreamEvent> {
   const startTime = Date.now();
   const { query, maxResults = 10 } = request;
   
-  console.log('\n🤖 Starting streaming agent search (ToolLoopAgent)...');
+  console.log('\n🤖 Starting streaming agent search (OpenAI Agents SDK)...');
   console.log(`   Query: "${query}"`);
   console.log(`   Max results: ${maxResults}`);
   console.log(`   Model: ${AGENT_MODEL}`);
-  console.log(`   Max iterations: ${MAX_ITERATIONS}`);
-  console.log(`   Mode: ${USE_AGENT ? 'AGENT' : 'DIRECT (no agent)'}`);
+  console.log(`   Max turns: ${MAX_TURNS}`);
   
   // Log attributes to Weave
   logAttributes({
@@ -134,61 +139,11 @@ export async function* agentSearchStreaming(request: SearchRequest): AsyncGenera
     maxResults,
     deviceId: request.deviceId || 'unknown',
     model: AGENT_MODEL,
-    useAgent: USE_AGENT,
     streaming: true,
     startTime: new Date(startTime).toISOString()
   });
   
   try {
-    // FALLBACK MODE: Direct search without agent
-    if (!USE_AGENT) {
-      console.log('   🔧 Using direct search (bypassing agent)...');
-      
-      yield {
-        type: 'status',
-        message: 'Using direct embedding search...',
-        timestamp: Date.now() - startTime
-      };
-      
-      // Directly call searchByEmbedding tool
-      const searchResult = await (searchByEmbedding as any).execute(
-        { query, topK: maxResults },
-        {}
-      );
-      
-      const executionTime = Date.now() - startTime;
-      
-      console.log(`\n   ✅ Direct search complete!`);
-      console.log(`   📊 Results: ${searchResult.results.length}`);
-      console.log(`   ⏱️  Total time: ${executionTime}ms\n`);
-      
-      logAttributes({
-        toolCallsUsed: ['searchByEmbedding'],
-        resultsReturned: searchResult.results.length,
-        executionTime,
-        success: true,
-        mode: 'direct'
-      });
-      
-      yield {
-        type: 'complete',
-        results: searchResult.results,
-        total: searchResult.results.length,
-        toolCalls: ['searchByEmbedding (direct)'],
-        reasoning: 'Direct embedding search without agent',
-        executionTime,
-        timestamp: Date.now() - startTime
-      };
-      return;
-    }
-    
-    // AGENT MODE: Full agentic search with ToolLoopAgent streaming
-    const userPrompt = `Find photos matching: "${query}"
-
-Return up to ${maxResults} results. Be smart about which tools to use.`;
-
-    console.log('   📤 Starting streaming request via ToolLoopAgent...');
-    
     yield {
       type: 'status',
       message: 'Agent started processing...',
@@ -198,67 +153,98 @@ Return up to ${maxResults} results. Be smart about which tools to use.`;
     // Get the reusable agent instance
     const agent = getSearchAgent();
 
-    // Stream the agent response
-    const streamResult = await agent.stream({
-      prompt: userPrompt,
-      onStepFinish: (step: any) => {
-        console.log(`   📍 Step finished:`, {
-          toolCalls: step.toolCalls?.length || 0,
-          text: step.text?.slice(0, 50) || 'none'
-        });
-      },
+    // Build the user prompt
+    const userPrompt = `Find photos matching: "${query}"
+
+Return up to ${maxResults} results. Be smart about which tools to use.`;
+
+    console.log('   📤 Starting streaming request via OpenAI Agents SDK...');
+    
+    // Use the streaming run
+    const streamResult = await run(agent, userPrompt, {
+      stream: true,
+      maxTurns: MAX_TURNS,
     });
 
-    let toolCallCount = 0;
-    let allResults: any[] = [];
     const toolCalls: string[] = [];
+    let allResults: any[] = [];
     let reasoningText = '';
 
-    // Stream tool calls and results as they happen
-    for await (const part of streamResult.fullStream) {
-      if (part.type === 'tool-call') {
-        toolCallCount++;
-        toolCalls.push(part.toolName);
-        console.log(`   🔧 Tool call ${toolCallCount}: ${part.toolName}`);
-        
-        // AI SDK 6 uses 'input' instead of 'args'
-        const toolArgs = (part as any).args ?? (part as any).input;
-        yield {
-          type: 'tool-call',
-          toolName: part.toolName,
-          args: toolArgs,
-          timestamp: Date.now() - startTime
-        };
-      } else if (part.type === 'tool-result') {
-        console.log(`   ✅ Tool result received`);
-        
-        // Extract results from tool result - use 'output' property in AI SDK 6
-        const toolOutput = (part as any).result ?? (part as any).output;
-        if (toolOutput && typeof toolOutput === 'object') {
-          const resultData = toolOutput as any;
-          if (resultData.results && Array.isArray(resultData.results)) {
-            console.log(`      → Got ${resultData.results.length} results`);
-            allResults = allResults.concat(resultData.results);
-            
-            // Yield intermediate results
-            yield {
-              type: 'partial-results',
-              count: resultData.results.length,
-              total: allResults.length,
-              timestamp: Date.now() - startTime
-            };
+    // Process streaming events
+    for await (const event of streamResult) {
+      const streamEvent = event as RunStreamEvent;
+      
+      if (streamEvent.type === 'agent_updated_stream_event') {
+        // Agent state changed
+        console.log(`   📍 Agent updated`);
+      } else if (streamEvent.type === 'raw_model_stream_event') {
+        // Raw model output - capture text deltas
+        const data = streamEvent.data as any;
+        if (data?.delta?.content) {
+          // Handle content deltas
+          for (const content of data.delta.content) {
+            if (content.type === 'text' && content.text) {
+              reasoningText += content.text;
+              yield {
+                type: 'text-delta',
+                text: content.text,
+                timestamp: Date.now() - startTime
+              };
+            }
           }
         }
-      } else if (part.type === 'text-delta') {
-        // Agent reasoning text - AI SDK 6 uses 'text' instead of 'textDelta'
-        const delta = (part as any).textDelta ?? (part as any).text ?? '';
-        reasoningText += delta;
+      } else if (streamEvent.type === 'run_item_stream_event') {
+        const item = streamEvent.item;
         
-        yield {
-          type: 'text-delta',
-          text: delta,
-          timestamp: Date.now() - startTime
-        };
+        if (item.type === 'tool_call_item') {
+          // Tool was called - get tool name from rawItem
+          const rawItem = item.rawItem as any;
+          const toolName = rawItem?.name || rawItem?.function?.name || 'unknown';
+          toolCalls.push(toolName);
+          console.log(`   🔧 Tool call: ${toolName}`);
+          
+          yield {
+            type: 'tool-call',
+            toolName,
+            args: rawItem?.arguments || rawItem?.function?.arguments || {},
+            timestamp: Date.now() - startTime
+          };
+        } else if (item.type === 'tool_call_output_item') {
+          // Tool returned results
+          console.log(`   ✅ Tool result received`);
+          
+          // Extract results from tool output
+          try {
+            const output = typeof item.output === 'string' 
+              ? JSON.parse(item.output) 
+              : item.output;
+            
+            if (output?.results && Array.isArray(output.results)) {
+              console.log(`      → Got ${output.results.length} results`);
+              allResults = allResults.concat(output.results);
+              
+              yield {
+                type: 'partial-results',
+                count: output.results.length,
+                total: allResults.length,
+                timestamp: Date.now() - startTime
+              };
+            }
+          } catch (e) {
+            // Output might not be JSON
+          }
+        } else if (item.type === 'message_output_item') {
+          // Final message from agent
+          const rawItem = item.rawItem as any;
+          const content = rawItem?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'output_text' && block.text) {
+                reasoningText += block.text;
+              }
+            }
+          }
+        }
       }
     }
 
@@ -291,7 +277,7 @@ Return up to ${maxResults} results. Be smart about which tools to use.`;
 
     const executionTime = Date.now() - startTime;
     
-    console.log(`\n   ✅ ToolLoopAgent search complete!`);
+    console.log(`\n   ✅ OpenAI Agents SDK search complete!`);
     console.log(`   📊 Final results: ${formattedResults.length}`);
     console.log(`   🔧 Tools used: ${toolCalls.join(', ') || 'none'}`);
     console.log(`   ⏱️  Total time: ${executionTime}ms`);
@@ -320,7 +306,7 @@ Return up to ${maxResults} results. Be smart about which tools to use.`;
 
   } catch (error: any) {
     const executionTime = Date.now() - startTime;
-    console.error(`\n   ❌ ToolLoopAgent search failed after ${executionTime}ms`);
+    console.error(`\n   ❌ OpenAI Agents SDK search failed after ${executionTime}ms`);
     console.error(`   Error type: ${error.name || 'Unknown'}`);
     console.error(`   Error message: ${error.message}`);
     if (error.stack) {
@@ -344,14 +330,13 @@ Return up to ${maxResults} results. Be smart about which tools to use.`;
 }
 
 /**
- * Non-streaming wrapper that uses ToolLoopAgent.generate()
- * Useful for clients that don't support SSE
+ * Non-streaming wrapper for clients that don't support SSE
  */
 export async function agentSearch(request: SearchRequest): Promise<SearchResponse> {
   const startTime = Date.now();
   const { query, maxResults = 10 } = request;
   
-  console.log('\n🤖 Starting non-streaming agent search (ToolLoopAgent)...');
+  console.log('\n🤖 Starting non-streaming agent search (OpenAI Agents SDK)...');
   console.log(`   Query: "${query}"`);
   console.log(`   Max results: ${maxResults}`);
   console.log(`   Model: ${AGENT_MODEL}`);
@@ -362,90 +347,51 @@ export async function agentSearch(request: SearchRequest): Promise<SearchRespons
     maxResults,
     deviceId: request.deviceId || 'unknown',
     model: AGENT_MODEL,
-    useAgent: USE_AGENT,
     streaming: false,
     startTime: new Date(startTime).toISOString()
   });
   
   try {
-    // FALLBACK MODE: Direct search without agent
-    if (!USE_AGENT) {
-      console.log('   🔧 Using direct search (bypassing agent)...');
-      
-      const searchResult = await (searchByEmbedding as any).execute(
-        { query, topK: maxResults },
-        {}
-      );
-      
-      const executionTime = Date.now() - startTime;
-      
-      console.log(`\n   ✅ Direct search complete!`);
-      console.log(`   📊 Results: ${searchResult.results.length}`);
-      console.log(`   ⏱️  Total time: ${executionTime}ms\n`);
-      
-      logAttributes({
-        toolCallsUsed: ['searchByEmbedding'],
-        resultsReturned: searchResult.results.length,
-        executionTime,
-        success: true,
-        mode: 'direct'
-      });
-      
-      return {
-        success: true,
-        results: searchResult.results,
-        total: searchResult.results.length,
-        agentSteps: {
-          toolCalls: ['searchByEmbedding (direct)'],
-          reasoning: 'Direct embedding search without agent',
-          iterations: 1
-        }
-      };
-    }
-    
-    // AGENT MODE: Use ToolLoopAgent.generate()
+    // Get the reusable agent instance
+    const agent = getSearchAgent();
+
+    // Build the user prompt
     const userPrompt = `Find photos matching: "${query}"
 
 Return up to ${maxResults} results. Be smart about which tools to use.`;
 
-    console.log('   📤 Starting request via ToolLoopAgent.generate()...');
+    console.log('   📤 Starting request via OpenAI Agents SDK...');
     
-    const agent = getSearchAgent();
-    const toolCalls: string[] = [];
-    
-    const result = await agent.generate({
-      prompt: userPrompt,
-      onStepFinish: (step: any) => {
-        console.log(`   📍 Step finished:`, {
-          toolCalls: step.toolCalls?.length || 0,
-          text: step.text?.slice(0, 50) || 'none'
-        });
-        // Collect tool calls from each step
-        if (step.toolCalls) {
-          for (const tc of step.toolCalls) {
-            toolCalls.push(tc.toolName);
-          }
-        }
-      },
+    // Run the agent (non-streaming)
+    const result = await run(agent, userPrompt, {
+      maxTurns: MAX_TURNS,
     });
-    
-    // Extract all results from tool results across all steps
+
+    // Extract tool calls and results from the run
+    const toolCalls: string[] = [];
     let allResults: any[] = [];
-    for (const step of result.steps) {
-      if (step.toolResults) {
-        for (const toolResult of step.toolResults) {
-          // Use 'output' property in AI SDK 6, fallback to 'result' for compatibility
-          const output = (toolResult as any).result ?? (toolResult as any).output;
-          if (output && typeof output === 'object') {
-            const resultData = output as any;
-            if (resultData.results && Array.isArray(resultData.results)) {
-              allResults = allResults.concat(resultData.results);
-            }
+
+    // Process all items from the run
+    for (const item of result.newItems) {
+      if (item.type === 'tool_call_item') {
+        const rawItem = item.rawItem as any;
+        const toolName = rawItem?.name || rawItem?.function?.name || 'unknown';
+        toolCalls.push(toolName);
+      } else if (item.type === 'tool_call_output_item') {
+        try {
+          const output = typeof item.output === 'string' 
+            ? JSON.parse(item.output) 
+            : item.output;
+          
+          if (output?.results && Array.isArray(output.results)) {
+            allResults = allResults.concat(output.results);
           }
+        } catch (e) {
+          // Output might not be JSON
         }
       }
     }
-    
+
     // Deduplicate results
     console.log(`   🔀 Deduplicating ${allResults.length} total results...`);
     const seenIds = new Set<string>();
@@ -475,19 +421,21 @@ Return up to ${maxResults} results. Be smart about which tools to use.`;
 
     const executionTime = Date.now() - startTime;
     
-    console.log(`\n   ✅ ToolLoopAgent.generate() complete!`);
+    // Get the final output text
+    const reasoningText = result.finalOutput || '';
+    
+    console.log(`\n   ✅ OpenAI Agents SDK search complete!`);
     console.log(`   📊 Final results: ${formattedResults.length}`);
     console.log(`   🔧 Tools used: ${toolCalls.join(', ') || 'none'}`);
     console.log(`   ⏱️  Total time: ${executionTime}ms`);
-    console.log(`   🤖 Agent reasoning: ${result.text?.slice(0, 100) || 'none'}...\n`);
+    console.log(`   🤖 Agent reasoning: ${reasoningText.slice(0, 100) || 'none'}...\n`);
 
     // Log to Weave
     logAttributes({
       toolCallsUsed: toolCalls,
-      iterationCount: result.steps?.length || 0,
       resultsReturned: formattedResults.length,
       executionTime,
-      agentReasoning: result.text || 'none',
+      agentReasoning: reasoningText || 'none',
       success: true,
       streaming: false
     });
@@ -498,14 +446,14 @@ Return up to ${maxResults} results. Be smart about which tools to use.`;
       total: formattedResults.length,
       agentSteps: {
         toolCalls,
-        reasoning: result.text || 'Search completed',
-        iterations: result.steps?.length || 0
+        reasoning: reasoningText || 'Search completed',
+        iterations: toolCalls.length
       }
     };
 
   } catch (error: any) {
     const executionTime = Date.now() - startTime;
-    console.error(`\n   ❌ ToolLoopAgent.generate() failed after ${executionTime}ms`);
+    console.error(`\n   ❌ OpenAI Agents SDK search failed after ${executionTime}ms`);
     console.error(`   Error type: ${error.name || 'Unknown'}`);
     console.error(`   Error message: ${error.message}`);
     if (error.stack) {
